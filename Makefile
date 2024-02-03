@@ -1,19 +1,12 @@
-all: Union.o test.o asan.o
-	size -t Union.o test.o asan.o
 
-CFLAGS = -Wall -Wpedantic -Wextra -Werror -Wno-maybe-uninitialized -std=c++14
 
-Union.o: Union.cpp Union.hpp
-	g++ $(CFLAGS) -O3 -s -c Union.cpp -o $@
+CFLAGS = -Wall -Wextra -Werror -Wpedantic -fdiagnostics-color -std=c++14 -Wno-noexcept-type
+COMPILED_HEADERS=functional.hpp.gch optional.hpp.gch string_view.hpp.gch type_traits.hpp.gch utility.hpp.gch variant.hpp.gch
 
-test.o: Union.cpp Union.hpp
-	g++ $(CFLAGS) -Os -g -c Union.cpp -o $@
-
-asan.o: Union.cpp Union.hpp
-	g++ $(CFLAGS) -Os -g -fsanitize=address -c Union.cpp -o $@
-
-test.out: test.cpp Union.hpp
-	g++ $(CFLAGS) -Os -g -c test.cpp -o $@
-
-asan.out: test.cpp Union.hpp
-	g++ $(CFLAGS) -Os -g -fsanitize=address test.cpp -o $@
+all: test.o $(COMPILED_HEADERS)
+%.hpp.gch : %.hpp
+	g++ $(CFLAGS) $<
+test.o: test.cpp type_traits.hpp.gch
+	g++ $(CFLAGS) -c -O2 $< -o $@
+clean:
+	rm *.gch
