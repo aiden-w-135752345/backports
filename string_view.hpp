@@ -1,6 +1,7 @@
 #ifndef STRING_VIEW_HPP
 #define STRING_VIEW_HPP 1
 #include <string>
+#include "type_traits.hpp"
 namespace backports{
     template<typename T, typename Traits = std::char_traits<T>>class basic_string_view{
         static_assert(is_trivial_v<T> && is_standard_layout_v<T> && !is_array_v<T>,"Invalid instantiation of basic_string_view");
