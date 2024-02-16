@@ -1,9 +1,9 @@
 #ifndef STRING_VIEW_HPP
 #define STRING_VIEW_HPP 1
-#include <string>
 #include "type_traits.hpp"
+#include <string>
 namespace backports{
-    template<typename T, typename Traits = std::char_traits<T>>class basic_string_view{
+    template<class T, class Traits = std::char_traits<T>>class basic_string_view{
         static_assert(is_trivial_v<T> && is_standard_layout_v<T> && !is_array_v<T>,"Invalid instantiation of basic_string_view");
         static_assert(is_same_v<T, typename Traits::char_type>,"Invalid instantiation of basic_string_view");
         typedef basic_string_view basic_sv;
@@ -164,5 +164,123 @@ namespace backports{
         constexpr size_t find_last_not_of(const T* that, size_t i, size_t n) const{ return find(basic_sv(that,n), i); }   
         constexpr size_t find_last_not_of(const T* that, size_t i = npos) const{ return find_last_not_of(basic_sv(that), i); }
     };
+    namespace _sv{template<class T,class Traits>using nondeduced_t=std::enable_if_t<true,basic_string_view<T, Traits>>;}
+    template<class T, class Traits>constexpr bool
+        operator==(basic_string_view<T, Traits> l, basic_string_view<T, Traits> r)
+        noexcept{ return l.size() == r.size() && l.compare(r) == 0; }
+    template<class T, class Traits>constexpr bool
+        operator==(basic_string_view<T, Traits> l, _sv::nondeduced_t<T,Traits> r)
+        noexcept { return l.size() == r.size() && l.compare(r) == 0; }
+    template<class T, class Traits>constexpr bool
+        operator==(_sv::nondeduced_t<T,Traits>l, basic_string_view<T, Traits> r)
+        noexcept { return l.size() == r.size() && l.compare(r) == 0; }
+    template<class T, class Traits>constexpr bool
+        operator!=(basic_string_view<T, Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return !(l == r); }
+    template<class T, class Traits>constexpr bool
+        operator!=(basic_string_view<T, Traits>l, _sv::nondeduced_t<T,Traits> r)
+        noexcept{ return !(l == r); }
+    template<class T, class Traits>constexpr bool
+        operator!=(_sv::nondeduced_t<T,Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return !(l == r); }
+
+    template<class T, class Traits>constexpr bool
+        operator< (basic_string_view<T, Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) < 0; }
+    template<class T, class Traits>constexpr bool
+        operator< (basic_string_view<T, Traits>l, _sv::nondeduced_t<T,Traits> r)
+        noexcept{ return l.compare(r) < 0; }
+    template<class T, class Traits>constexpr bool
+        operator< (_sv::nondeduced_t<T,Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) < 0; }
+    template<class T, class Traits>constexpr bool
+        operator> (basic_string_view<T, Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) > 0; }
+    template<class T, class Traits>constexpr bool
+        operator> (basic_string_view<T, Traits>l, _sv::nondeduced_t<T,Traits> r)
+        noexcept{ return l.compare(r) > 0; }
+    template<class T, class Traits>constexpr bool
+        operator> (_sv::nondeduced_t<T,Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) > 0; }
+    template<class T, class Traits>constexpr bool
+        operator<=(basic_string_view<T, Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) <= 0; }
+    template<class T, class Traits>constexpr bool
+        operator<=(basic_string_view<T, Traits>l, _sv::nondeduced_t<T,Traits> r)
+        noexcept{ return l.compare(r) <= 0; }
+    template<class T, class Traits>constexpr bool
+        operator<=(_sv::nondeduced_t<T,Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) <= 0; }
+    template<class T, class Traits>constexpr bool
+        operator>=(basic_string_view<T, Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) >= 0; }
+    template<class T, class Traits>constexpr bool
+        operator>=(basic_string_view<T, Traits>l, _sv::nondeduced_t<T,Traits> r)
+        noexcept{ return l.compare(r) >= 0; }
+    template<class T, class Traits>constexpr bool
+        operator>=(_sv::nondeduced_t<T,Traits>l, basic_string_view<T, Traits> r)
+        noexcept{ return l.compare(r) >= 0; }
+
+    using string_view = basic_string_view<char>;
+    using wstring_view = basic_string_view<wchar_t>;
+#ifdef _GLIBCXX_USE_CHAR8_T
+    using u8string_view = basic_string_view<char8_t>;
+#endif
+    using u16string_view = basic_string_view<char16_t>;
+    using u32string_view = basic_string_view<char32_t>;
+#if _GLIBCXX_HOSTED
+}
+#include <ostream>
+namespace backports{
+    template<typename T, typename Traits> inline std::basic_ostream<T, Traits>&
+        operator<<(std::basic_ostream<T, Traits>& stream,basic_string_view<T,Traits> str)
+        { return stream.write(str.data(),str.size()); }
+#endif // HOSTED
+    namespace _sv{
+        template<class T>struct hash{
+            typedef size_t result_type;
+            typedef backports::basic_string_view<T> argument_type;
+            size_t operator()(const argument_type& s) const noexcept
+            { return std::_Hash_impl::hash(s.data(), s.length()*sizeof(T)); }
+        };
+    }
+#include <string_view>
 }// namespace backports
+template<>struct std::hash<backports::string_view>:backports::_sv::hash<char>{};
+template<>struct std::__is_fast_hash<std::hash<backports::string_view>>:false_type{};
+template<>struct std::hash<backports::wstring_view>:backports::_sv::hash<wchar_t>{};
+template<>struct std::__is_fast_hash<std::hash<backports::wstring_view>>:false_type{};
+#ifdef _GLIBCXX_USE_CHAR8_T
+template<>struct std::hash<backports::u8string_view>:backports::_sv::hash<char8_t>{};
+template<>struct std::__is_fast_hash<std::hash<backports::u8string_view>>:false_type{};
+#endif
+template<>struct std::hash<backports::u16string_view>:backports::_sv::hash<char16_t>{};
+template<>struct std::__is_fast_hash<std::hash<backports::u16string_view>>:false_type{};
+template<>struct std::hash<backports::u32string_view>:backports::_sv::hash<char32_t>{};
+template<>struct std::__is_fast_hash<std::hash<backports::u32string_view>>:false_type{};
+
+namespace backports{inline namespace literals{inline namespace string_view_literals{
+    inline constexpr basic_string_view<char>
+    operator""_sv(const char* s, size_t l)
+    noexcept{ return {s,l}; }
+
+    inline constexpr basic_string_view<wchar_t>
+    operator""_sv(const wchar_t* s, size_t l)
+    noexcept{ return {s,l}; }
+
+#ifdef _GLIBCXX_USE_CHAR8_T
+    inline constexpr basic_string_view<char8_t>
+    operator""_sv(const char8_t* s, size_t l)
+    noexcept{ return {s,l}; }
+#endif
+
+    inline constexpr basic_string_view<char16_t>
+    operator""_sv(const char16_t* s, size_t l)
+    noexcept{ return {s,l}; }
+
+    inline constexpr basic_string_view<char32_t>
+    operator""_sv(const char32_t* s, size_t l)
+    noexcept{ return {s,l}; }
+}}} // namespace backports::literals::string_literals
+
 #endif // STRING_VIEW_HPP

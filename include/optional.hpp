@@ -1,9 +1,9 @@
 #ifndef OPTIONAL_HPP
 #define OPTIONAL_HPP 1
+#include "../src/inline_variables.hpp"
+#include "../src/special_members.hpp"
 #include "utility.hpp"
 #include "type_traits.hpp"
-#include "inline_variables.hpp"
-#include "detail/special_members.hpp"
 #include <stdexcept>
 #include <new>
 #include <initializer_list>
@@ -56,19 +56,19 @@ namespace backports{
                       !is_same_v<std::remove_cv_t<T>, in_place_t>&&
                       !is_reference_v<T>,"Invalid instantiation of optional<T>");
         using Base = _opt::Base_t<T>;
-        template<class U>constexpr INLINE const bool not_optional_T = !is_same_v<optional<T>,std::decay_t<U>>;
-        template<class U>constexpr INLINE const bool not_in_place = !is_same_v<in_place_t,std::decay_t<U>>;
-        template<class...Args>constexpr INLINE const bool T_constructible=is_constructible_v<T,Args...>;
-        template<class...Args>constexpr INLINE const bool T_nothrow_constructible=is_nothrow_constructible_v<T, Args...>;
-        template<class U>constexpr INLINE const bool convertible_T=is_convertible_v<U,T>;
-        template<class U>constexpr INLINE const bool not_convertible_from_optional =
+        template<class U>constexpr static const bool not_optional_T = !is_same_v<optional<T>,std::decay_t<U>>;
+        template<class U>constexpr static const bool not_in_place = !is_same_v<in_place_t,std::decay_t<U>>;
+        template<class...Args>constexpr static const bool T_constructible=is_constructible_v<T,Args...>;
+        template<class...Args>constexpr static const bool T_nothrow_constructible=is_nothrow_constructible_v<T, Args...>;
+        template<class U>constexpr static const bool convertible_T=is_convertible_v<U,T>;
+        template<class U>constexpr static const bool not_convertible_from_optional =
             !(is_same_v<T, U>||
               T_constructible<const optional<U>&>||T_constructible<optional<U>&>||
               T_constructible<const optional<U>&&>||T_constructible<optional<U>&&>||
               convertible_T<const optional<U>&>||convertible_T<optional<U>&>||
               convertible_T<const optional<U>&&>||convertible_T<optional<U>&&>
               );
-        template<class U>constexpr INLINE const bool not_assignable_from_optional=
+        template<class U>constexpr static const bool not_assignable_from_optional=
             !(is_assignable_v<T&,const optional<U>&>||is_assignable_v<T&, optional<U>&>||
               is_assignable_v<T&,const optional<U>&&>||is_assignable_v<T&, optional<U>&&>
               )&&is_assignable_v<T&, U>&&not_convertible_from_optional<U>;
@@ -265,11 +265,7 @@ namespace backports{
 } // namespace backports
 
 template<class T>struct std::hash<backports::optional<T>>:
-private __poison_hash<std::remove_const_t<T>>,public backports::_opt::hash<T>{
+    private __poison_hash<std::remove_const_t<T>>,public backports::_opt::hash<T>{
         using result_type = size_t;using argument_type = backports::optional<T>;
     };
-#if __cpp_deduction_guides >= 201606
-template <class T> optional(T) -> optional<T>;
-#endif
-
 #endif // OPTIONAL_HPP

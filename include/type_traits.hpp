@@ -1,7 +1,7 @@
 #ifndef TYPE_TRAITS_HPP
 #define TYPE_TRAITS_HPP
 
-#include "inline_variables.hpp"
+#include "../src/inline_variables.hpp"
 #include <type_traits>
 #include <utility>
 namespace backports{
@@ -35,15 +35,15 @@ namespace backports{
     template< class T >constexpr INLINE const bool is_pod_v = std::is_pod<T>::value;
     template< class T >constexpr INLINE const bool is_literal_type_v = std::is_literal_type<T>::value;
 #ifdef _GLIBCXX_HAVE_BUILTIN_HAS_UNIQ_OBJ_REP
-    template<class T>constexpr INLINE const bool has_unique_object_representations_v = __has_unique_object_representations(remove_cv_t<remove_all_extents_t<T>>);
+    template<class T>constexpr INLINE const bool has_unique_object_representations_v = __has_unique_object_representations(std::remove_cv_t<std::remove_all_extents_t<T>>);
     template<class T>struct has_unique_object_representations: bool_constant<has_unique_object_representations_v<T>>{};
-#endif    
+#endif
     template< class T >constexpr INLINE const bool is_empty_v = std::is_empty<T>::value;
     template< class T >constexpr INLINE const bool is_polymorphic_v = std::is_polymorphic<T>::value;
     template< class T >constexpr INLINE const bool is_abstract_v = std::is_abstract<T>::value;
     template< class T >constexpr INLINE const bool is_final_v = std::is_final<T>::value;
 #ifdef _GLIBCXX_HAVE_BUILTIN_IS_AGGREGATE
-    template<class T>constexpr INLINE const bool is_aggregate_v = __is_aggregate(remove_cv_t<T>);
+    template<class T>constexpr INLINE const bool is_aggregate_v = __is_aggregate(std::remove_cv_t<T>);
     template<class T>struct is_aggregate: bool_constant<is_aggregate_v<T>>{};
 #endif
     template< class T >constexpr INLINE const bool is_signed_v = std::is_signed<T>::value;
@@ -115,5 +115,5 @@ namespace backports{
 }//namespace backports
 #endif //TYPE_TRAITS_HPP
 #ifndef NO_INVOKE_TRAITS
-#include "detail/invoke_traits.hpp"
+#include "../src/invoke_traits.hpp"
 #endif

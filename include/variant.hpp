@@ -1,12 +1,13 @@
 #ifndef VARIANT_HPP
 #define VARIANT_HPP
-#include "detail/special_members.hpp"
+#include "../src/special_members.hpp"
+#include "../src/inline_variables.hpp"
 #include "utility.hpp"
 #include "functional.hpp"
-#include "inline_variables.hpp"
 #include <type_traits>
 #include <initializer_list>
 #include <exception>
+#include <array>
 namespace backports {
     template<class...Ts> class variant;
     struct monostate {};
