@@ -5,6 +5,6 @@ HEADERS += variant.hpp tuple.hpp
 HEADERS := $(foreach header,$(HEADERS),include/$(header))
 all: test.out $(HEADERS)
 test.out: test.cpp $(HEADERS)
-	g++ $(CFLAGS) -o $@ -O2 -g $<
+	g++ $(CFLAGS) -o $@ -Og -g -fsanitize=address $<
 clean:
 	test.out
