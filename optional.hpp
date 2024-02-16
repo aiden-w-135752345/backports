@@ -19,24 +19,24 @@ namespace backports{
         template <class T>struct Base{
             using Payload = std::remove_const_t<T>;
             bool filled = false;
-            union { nullopt_t nothing; Payload payload; };
+            alignas(T) unsigned char payload[sizeof(T)];
             constexpr Base()=default;
             void construct(const Base&that)noexcept(is_nothrow_copy_constructible_v<Payload>){
-                if(that.filled){::new ((void *) std::addressof(this->payload))Payload(that.payload); this->filled = true; }
+                if(that.filled){::new (this->payload)Payload(*(T*)that.payload); this->filled = true; }
             }
             void construct(const Base&&that)noexcept(is_nothrow_move_constructible_v<Payload>){
-                if(that.filled){::new ((void *) std::addressof(this->payload))Payload(std::move(that.payload)); this->filled = true; }
+                if(that.filled){::new (this->payload)Payload(std::move(*(T*)that.payload)); this->filled = true; }
             }
             void assign(const Base&that)noexcept(is_nothrow_copy_constructible_v<Payload>&&is_nothrow_copy_assignable_v<Payload>){
-                if (this->filled && that.filled) this->payload = that.payload;
+                if (this->filled && that.filled) *(T*)(this->payload) = *(T*)that.payload;
                 else {this->reset();this->construct(that); }
             }
             void assign(Base&&that)noexcept(is_nothrow_move_constructible_v<Payload>&&is_nothrow_move_assignable_v<Payload>){
-                if (this->filled && that.filled) this->payload = std::move(that.payload);
+                if (this->filled && that.filled) *(T*)(this->payload) = std::move(*(T*)that.payload);
                 else {this->reset();this->construct(std::move(that)); }
             }
             void destruct(){reset();}
-            void reset(){if(filled){payload.~Payload();filled=false;}}
+            void reset(){if(filled){((T*)payload)->~Payload();filled=false;}}
         };
         template <class T>using Base_t=detail::special_members<
             Base<T>,
@@ -78,9 +78,9 @@ namespace backports{
         template<class... Args>T&emplace_impl(Args&&... args){
             reset();
             using Payload = std::remove_const_t<T>;
-            ::new ((void *) std::addressof(payload))Payload(std::forward<Args>(args)...);
+            ::new (payload)Payload(std::forward<Args>(args)...);
             filled = true;
-            return payload;
+            return *(T*)payload;
         }
     public:
         using value_type = T;
@@ -96,16 +96,16 @@ namespace backports{
             explicit constexpr optional(U&& u){emplace(std::forward<U>(u));}
         template <class U,
             std::enable_if_t<T_constructible<const U&>&&not_convertible_from_optional<U>&&convertible_T<const U&>, bool> = true>
-            constexpr optional(const optional<U>&that){if(that.filled)emplace(that.payload);}
+            constexpr optional(const optional<U>&that){if(that.filled)emplace(*(U*)that.payload);}
         template <class U,
             std::enable_if_t<T_constructible<const U&>&&not_convertible_from_optional<U>&&!convertible_T<const U&>, bool> = false>
-            explicit constexpr optional(const optional<U>&that){if(that.filled)emplace(that.payload);}
+            explicit constexpr optional(const optional<U>&that){if(that.filled)emplace(*(U*)that.payload);}
         template <class U,
             std::enable_if_t<T_constructible<U&&>&&not_convertible_from_optional<U>&&convertible_T<U&&>, bool> = true>
-            constexpr optional(optional<U>&&that){if(that.filled)emplace(std::move(that.payload));}
+            constexpr optional(optional<U>&&that){if(that.filled)emplace(std::move(*(U*)that.payload));}
         template <class U,
             std::enable_if_t<T_constructible<U&&>&&not_convertible_from_optional<U>&&!convertible_T<U&&>, bool> = false>
-            explicit constexpr optional(optional<U>&& that){if(that.filled)emplace(std::move(that.payload));}
+            explicit constexpr optional(optional<U>&& that){if(that.filled)emplace(std::move(*(U*)that.payload));}
         
         template<class... Args,std::enable_if_t<T_constructible<Args&&...>, bool> = false>
             explicit constexpr optional(in_place_t, Args&&...args){emplace(std::forward<Args>(args)...);}
@@ -117,14 +117,14 @@ namespace backports{
             not_optional_T<U>&&T_constructible<U>&&is_assignable_v<T&, U>&&
             !(is_scalar_v<T>&&is_same_v<T, std::decay_t<U>>),
         optional&>operator=(U&& u){
-            if (filled){payload = std::forward<U>(u);}else{emplace(std::forward<U>(u));}
+            if (filled){*(T*)payload = std::forward<U>(u);}else{emplace(std::forward<U>(u));}
             return *this;
         }
         template<class U>std::enable_if_t<T_constructible<const U&>&&not_assignable_from_optional<U>,optional&>
             operator=(const optional<U>& that){
                 if (that.filled){
-                    if (this->filled)this->payload = that.payload;
-                    else this->construct(that.payload);
+                    if (this->filled)*(T*)(this->payload) = *(U*)that.payload;
+                    else this->construct(*(U*)that.payload);
                 }
                 else this->reset();
                 return *this;
@@ -133,8 +133,8 @@ namespace backports{
         template<class U>std::enable_if_t<T_constructible<U&&>&&not_assignable_from_optional<U>,optional&>
             operator=(optional<U>&& that){
                 if (that.filled){
-                    if (this->filled)this->payload = std::move(that.payload);
-                    else this->emplace(std::move(that.payload));
+                    if (this->filled)*(T*)(this->payload) = std::move(*(U*)that.payload);
+                    else this->emplace(std::move(*(U*)that.payload));
                 } else this->reset();
                 return *this;
             }
@@ -147,37 +147,37 @@ namespace backports{
         // Swap.
         void swap(optional& that) noexcept(is_nothrow_move_constructible_v<T> && is_nothrow_swappable_v<T>){
             using std::swap;
-            if (this->filled && that.filled) swap(this->payload, that.payload);
+            if (this->filled && that.filled) swap(*(T*)(this->payload),*(T*)that.payload);
             else if (this->filled){
-                that.emplace(std::move(this->payload));
+                that.emplace(std::move(*(T*)(this->payload)));
                 this->reset();
             }
             else if (that.filled){
-                this->emplace(std::move(that.payload));
+                this->emplace(std::move(*(T*)that.payload));
                 that.reset();
             }
         }
         
         // Observers.
-        constexpr const T*operator->() const{ return std::addressof(payload); }
-        T*operator->(){ return std::addressof(payload); }
-        constexpr const T&operator*() const&{ return payload; }
-        constexpr T&operator*()&{ return payload; }
-        constexpr T&&operator*()&&{ return std::move(payload); }
-        constexpr const T&&operator*() const&&{ return std::move(payload); }
+        constexpr const T*operator->() const{ return (T*)payload; }
+        T*operator->(){ return (T*)payload; }
+        constexpr const T&operator*() const&{ return *(T*)payload; }
+        constexpr T&operator*()&{ return *(T*)payload; }
+        constexpr T&&operator*()&&{ return std::move(*(T*)payload); }
+        constexpr const T&&operator*() const&&{ return std::move(*(T*)payload); }
         constexpr bool has_value() const noexcept { return filled; }
         constexpr explicit operator bool() const noexcept{ return filled; }
-        constexpr const T&value() const& {assert_filled();return payload;}
-        constexpr T&value()&{assert_filled();return payload;}
-        constexpr T&&value()&&{assert_filled();return std::move(payload);}
-        constexpr const T&&value() const&&{assert_filled();return std::move(payload);}
+        constexpr const T&value() const& {assert_filled();return *(T*)payload;}
+        constexpr T&value()&{assert_filled();return *(T*)payload;}
+        constexpr T&&value()&&{assert_filled();return std::move(*(T*)payload);}
+        constexpr const T&&value() const&&{assert_filled();return std::move(*(T*)payload);}
         template<class Def>constexpr T value_or(Def&& def) const&{
             static_assert(is_copy_constructible_v<T>&&convertible_T<Def&&>,"Cannot return value");
-            return filled? payload: static_cast<T>(std::forward<Def>(def));
+            return filled? *(T*)payload: static_cast<T>(std::forward<Def>(def));
         }
         template<class Def>T value_or(Def&& def) && {
             static_assert(is_move_constructible_v<T>&&convertible_T<Def&&>,"Cannot return value" );
-            return filled? std::move(payload): static_cast<T>(std::forward<Def>(def));
+            return filled? std::move(*(T*)payload): static_cast<T>(std::forward<Def>(def));
         }
         using Base::reset;
     };// class optional
@@ -254,17 +254,18 @@ namespace backports{
     template<class T, class U, class ...Args>constexpr optional<T>make_optional(std::initializer_list<U> il, Args&&... args)
     { return optional<T> { in_place, il, std::forward<Args>(args)... }; }
     // Hash.
-    template<class T, class U = std::remove_const_t<T>,bool = std::__poison_hash<U>::__enable_hash_call>
-        struct optional_hash{};
-    template<class T, class U>struct optional_hash<T, U, true> {
-        size_t operator()(const optional<T>& t) const noexcept(noexcept(std::hash<U>{}(*t))){
-            return t ? std::hash<U>{}(*t) : static_cast<size_t>(-3333);
-        }
-    };
-} // namespace opt
+    namespace _opt{
+        template<class T, class U = std::remove_const_t<T>,bool=std::__poison_hash<U>::__enable_hash_call>struct hash{};
+        template<class T, class U>struct hash<T, U, true> {
+            size_t operator()(const optional<T>& t) const noexcept(noexcept(std::hash<U>{}(*t))){
+                return t ? std::hash<U>{}(*t) : static_cast<size_t>(-3333);
+            }
+        };
+    }
+} // namespace backports
 
-template<class T>struct std::hash<backports::optional<T>>
-    :private __poison_hash<std::remove_const_t<T>>,public backports::optional_hash<T>{
+template<class T>struct std::hash<backports::optional<T>>:
+private __poison_hash<std::remove_const_t<T>>,public backports::_opt::hash<T>{
         using result_type = size_t;using argument_type = backports::optional<T>;
     };
 #if __cpp_deduction_guides >= 201606
