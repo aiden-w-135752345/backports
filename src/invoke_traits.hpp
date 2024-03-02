@@ -7,7 +7,6 @@ namespace backports{
         template<class T>struct type_identity{ using type = T; };
         template<class T>using type_identity_t = typename type_identity<T>::type;
         template<class T>using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<T>>;
-        template<class T,class...>using first_t = T;
         template<class>struct is_reference_wrapper:std::false_type{};
         template<class U>struct is_reference_wrapper<std::reference_wrapper<U>>:std::true_type{};
         

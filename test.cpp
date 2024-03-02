@@ -1,3 +1,4 @@
+#include "include/charconv.hpp"
 #include "include/functional.hpp"
 #include "include/optional.hpp"
 #include "include/string_view.hpp"
@@ -22,5 +23,8 @@ int main(int argc,char**){
     std::cout<<backports::invoke(foo,baz.value())<<'\n';
     std::cout<<backports::tuple_size_v<decltype(std::make_tuple(1,2,3))> <<'\n';
     printType<backports::in_place_type_t<backports::bool_constant<true>>>();
+    std::string str=std::string(100,'_');
+    char* end=backports::to_chars(&*str.begin(),&*str.end(),3.94071e-4933L,backports::chars_format::hex).ptr;
+    std::cout<<backports::string_view(&*str.begin(),end-&*str.begin())<<'\n';
     return 0;
 }

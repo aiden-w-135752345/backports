@@ -157,7 +157,7 @@ namespace backports{
             for(i=std::min(this->len,i+1);i;)if(!that.contains(this->str[--i]))return i;
             return npos;
         }
-        constexpr size_t find_last_not_of(T that, size_t i) const noexcept{
+        constexpr size_t find_last_not_of(T that, size_t i = npos) const noexcept{
             for(i = std::min(len,i+1);i;)if(!traits_type::eq(str[--i], that))return i;
             return npos;
         }
