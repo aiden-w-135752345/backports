@@ -328,22 +328,23 @@ namespace backports {
             size_t&value;
             template<class T,class U>void operator()(T,const U&that){value+=std::hash<U>{}(that);}
         };
-        template<bool,class...>struct hash{};
-        template<class...Ts>struct hash<true,Ts...> {
-            using argument_type = variant<Ts...>;
-            using result_type = size_t;
+        template<class T, class=void>class hash{
+            private: // Private rather than deleted to be non-trivially-copyable.
+            hash(hash&&);
+            ~hash();
+        };
+        template<class...Ts>struct hash<variant<Ts...>, void_t<decltype(std::hash<Ts>()(std::declval<Ts>()))...>> {
             size_t operator()(const variant<Ts...>& that) const 
                 noexcept(and_v<is_nothrow_invocable_v<std::hash<std::remove_const_t<Ts>>,Ts>...>){
                     size_t ret=std::hash<size_t>{}(that.index());
                     basic_visit(get_base(that),hashVisitor{ret});
                     return ret;
                 }
+
         };
     }
 }//namespace backports
-template<class...Ts>struct std::hash<backports::variant<Ts...>>:
-private __poison_hash<std::remove_const_t<Ts>>...,
-public backports::_variant::hash<backports::_variant::and_v<__poison_hash<remove_const_t<Ts>>::__enable_hash_call...>,Ts...>{};
+template<class...Ts>struct std::hash<backports::variant<Ts...>>:public backports::_variant::hash<backports::variant<Ts...>>{};
 template<>struct std::hash<backports::monostate>{
     using argument_type = backports::monostate;
     using result_type = size_t;

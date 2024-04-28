@@ -255,17 +255,21 @@ namespace backports{
     { return optional<T> { in_place, il, std::forward<Args>(args)... }; }
     // Hash.
     namespace _opt{
-        template<class T, class U = std::remove_const_t<T>,bool=std::__poison_hash<U>::__enable_hash_call>struct hash{};
-        template<class T, class U>struct hash<T, U, true> {
-            size_t operator()(const optional<T>& t) const noexcept(noexcept(std::hash<U>{}(*t))){
-                return t ? std::hash<U>{}(*t) : static_cast<size_t>(-3333);
+        template<class T, class=void>class hash{
+            private: // Private rather than deleted to be non-trivially-copyable.
+            hash(hash&&);
+            ~hash();
+        };
+        template<class T>struct hash<T, void_t<decltype(std::hash<T>()(std::declval<T>()))>> {
+            size_t operator()(const optional<T>& t) const noexcept(noexcept(std::hash<T>{}(*t))){
+                return t ? std::hash<T>{}(*t) : static_cast<size_t>(-3333);
+            }
+            size_t operator()(const optional<const T>& t) const noexcept(noexcept(std::hash<T>{}(*t))){
+                return t ? std::hash<T>{}(*t) : static_cast<size_t>(-3333);
             }
         };
     }
 } // namespace backports
 
-template<class T>struct std::hash<backports::optional<T>>:
-    private __poison_hash<std::remove_const_t<T>>,public backports::_opt::hash<T>{
-        using result_type = size_t;using argument_type = backports::optional<T>;
-    };
+template<class T>struct std::hash<backports::optional<T>>:public backports::_opt::hash<std::remove_const_t<T>>{};
 #endif // OPTIONAL_HPP

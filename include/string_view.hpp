@@ -1,8 +1,25 @@
 #ifndef STRING_VIEW_HPP
 #define STRING_VIEW_HPP 1
-#include "type_traits.hpp"
 #include <string>
+#include <cstring>
+#include <ostream>
+#include <cstdarg>
+#include <limits>
+#include <functional>
+#include "type_traits.hpp"
 namespace backports{
+    namespace _sv{
+        inline void out_of_range_fmt(const char* fmt, ...){
+            const size_t bufsiz = std::strlen(fmt)+2*std::numeric_limits<size_t>::digits10;
+            char *const s = static_cast<char*>(__builtin_alloca(bufsiz));
+            va_list args;
+        
+            va_start(args, fmt);
+            snprintf(s, bufsiz, fmt, args);
+            throw std::out_of_range(s);
+            va_end(args);
+        }
+    }
     template<class T, class Traits = std::char_traits<T>>class basic_string_view{
         static_assert(is_trivial_v<T> && is_standard_layout_v<T> && !is_array_v<T>,"Invalid instantiation of basic_string_view");
         static_assert(is_same_v<T, typename Traits::char_type>,"Invalid instantiation of basic_string_view");
@@ -44,7 +61,7 @@ namespace backports{
         constexpr bool empty() const noexcept{ return len == 0; }
         constexpr const_reference operator[](size_t i) const{ return str[i]; }
         constexpr const_reference at(size_t i) const{
-            if (i >= len)std::__throw_out_of_range_fmt("basic_string_view::at: i (which is %zu) >= size() (which is %zu)", i, size());
+            if (i >= len)_sv::out_of_range_fmt("basic_string_view::at: i (which is %zu) >= size() (which is %zu)", i, size());
             return str[i];
         }
         constexpr const_reference front() const{ return str[0]; }
@@ -54,14 +71,13 @@ namespace backports{
         constexpr void remove_suffix(size_t n){ len -= n; }
         constexpr void swap(basic_sv& that) noexcept{ auto tmp = *this;*this = that;that = tmp; }
         constexpr size_t copy(T* that, size_t n, size_t i = 0) const{
-            __glibcxx_requires_string_len(that, n);
-            if (i > len) std::__throw_out_of_range_fmt("basic_string_view::copy: i (which is %zu) > size() (which is %zu)", i, len);
+            if (i > len) _sv::out_of_range_fmt("basic_string_view::copy: i (which is %zu) > size() (which is %zu)", i, len);
             n = std::min<size_t>(n, len - i);
             traits_type::copy(that, data() + i, n);
             return n;
         }
         constexpr basic_sv substr(size_t i = 0, size_t n = npos) const{
-            if (i > len) std::__throw_out_of_range_fmt("basic_string_view::substr: i (which is %zu) > size() (which is %zu)", i, len);
+            if (i > len) _sv::out_of_range_fmt("basic_string_view::substr: i (which is %zu) > size() (which is %zu)", i, len);
             n = std::min<size_t>(n, len - i);
             return basic_sv(str + i, n);
         }
@@ -228,38 +244,21 @@ namespace backports{
 #endif
     using u16string_view = basic_string_view<char16_t>;
     using u32string_view = basic_string_view<char32_t>;
-#if _GLIBCXX_HOSTED
-}
-#include <ostream>
-namespace backports{
     template<typename T, typename Traits> inline std::basic_ostream<T, Traits>&
-        operator<<(std::basic_ostream<T, Traits>& stream,basic_string_view<T,Traits> str)
+        operator<<(std::basic_ostream<T, Traits>& stream,backports::basic_string_view<T,Traits> str)
         { return stream.write(str.data(),str.size()); }
-#endif // HOSTED
     namespace _sv{
         template<class T>struct hash{
             typedef size_t result_type;
             typedef backports::basic_string_view<T> argument_type;
-            size_t operator()(const argument_type& s) const noexcept
-            { return std::_Hash_impl::hash(s.data(), s.length()*sizeof(T)); }
+            size_t operator()(const argument_type& s) const noexcept {
+                //return std::_Hash_bytes(s.data(), s.length()*sizeof(T), static_cast<size_t>(0xc70f6907UL));
+                return std::__do_string_hash(s.data(), s.data()+s.length());
+                //return std::_Hash_impl::hash(s.data(), s.length()*sizeof(T));
+            }
         };
     }
-#include <string_view>
-}// namespace backports
-template<>struct std::hash<backports::string_view>:backports::_sv::hash<char>{};
-template<>struct std::__is_fast_hash<std::hash<backports::string_view>>:false_type{};
-template<>struct std::hash<backports::wstring_view>:backports::_sv::hash<wchar_t>{};
-template<>struct std::__is_fast_hash<std::hash<backports::wstring_view>>:false_type{};
-#ifdef _GLIBCXX_USE_CHAR8_T
-template<>struct std::hash<backports::u8string_view>:backports::_sv::hash<char8_t>{};
-template<>struct std::__is_fast_hash<std::hash<backports::u8string_view>>:false_type{};
-#endif
-template<>struct std::hash<backports::u16string_view>:backports::_sv::hash<char16_t>{};
-template<>struct std::__is_fast_hash<std::hash<backports::u16string_view>>:false_type{};
-template<>struct std::hash<backports::u32string_view>:backports::_sv::hash<char32_t>{};
-template<>struct std::__is_fast_hash<std::hash<backports::u32string_view>>:false_type{};
-
-namespace backports{inline namespace literals{inline namespace string_view_literals{
+inline namespace literals{inline namespace string_view_literals{
     inline constexpr basic_string_view<char>
     operator""_sv(const char* s, size_t l)
     noexcept{ return {s,l}; }
@@ -281,6 +280,14 @@ namespace backports{inline namespace literals{inline namespace string_view_liter
     inline constexpr basic_string_view<char32_t>
     operator""_sv(const char32_t* s, size_t l)
     noexcept{ return {s,l}; }
-}}} // namespace backports::literals::string_literals
-
+}} // namespace literals::string_literals
+} // namespace backports
+#include <string_view>
+template<>struct std::hash<backports::string_view>:backports::_sv::hash<char>{};
+template<>struct std::hash<backports::wstring_view>:backports::_sv::hash<wchar_t>{};
+#ifdef _GLIBCXX_USE_CHAR8_T
+template<>struct std::hash<backports::u8string_view>:backports::_sv::hash<char8_t>{};
+#endif
+template<>struct std::hash<backports::u16string_view>:backports::_sv::hash<char16_t>{};
+template<>struct std::hash<backports::u32string_view>:backports::_sv::hash<char32_t>{};
 #endif // STRING_VIEW_HPP

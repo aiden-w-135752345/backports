@@ -1,7 +1,15 @@
 CFLAGS = -Wall -Wextra -Werror -Wpedantic -fdiagnostics-color -std=c++14 -Wno-noexcept-type
-HEADERS = include/functional.hpp include/optional.hpp
-HEADERS += include/string_view.hpp include/type_traits.hpp include/utility.hpp
-HEADERS += include/variant.hpp include/tuple.hpp
+#CXXFLAGS += -flto=full
+CXX = clang++
+
+HEADERS =  include/algorithm.hpp include/any.hpp
+HEADERS += include/array.hpp include/charconv.hpp
+HEADERS += include/chrono.hpp include/cmath.hpp
+HEADERS += include/cstddef.hpp include/ctime.hpp
+HEADERS += include/execution.hpp include/functional.hpp
+HEADERS += include/optional.hpp include/string_view.hpp
+HEADERS += include/tuple.hpp include/type_traits.hpp
+HEADERS += include/utility.hpp include/variant.hpp 
 HEADERS += $(wildcard src/ryu/*) src/inline_variables.hpp 
 HEADERS += src/invoke_traits.hpp src/special_members.hpp
 
@@ -13,11 +21,11 @@ RYU_OBJECTS=generic_128 d2s d2s_full_table d2fixed f2s d2fixed_full_table
 backports.a: $(foreach obj,$(MY_OBJECTS) $(RYU_OBJECTS),build/$(obj).o)
 	ar rcu $@ $^
 test.out: test.cpp $(foreach obj,$(MY_OBJECTS),src/$(obj).cpp) $(foreach obj,$(RYU_OBJECTS),build/$(obj).o) $(HEADERS)
-	g++ $(CFLAGS) -o $@ -Og -g test.cpp $(foreach obj,$(MY_OBJECTS),src/$(obj).cpp) $(foreach obj,$(RYU_OBJECTS),build/$(obj).o) -Wno-vla # -fsanitize=address
+	$(CXX) $(CFLAGS) -o $@ -Og -g test.cpp $(foreach obj,$(MY_OBJECTS),src/$(obj).cpp) $(foreach obj,$(RYU_OBJECTS),build/$(obj).o) -Wno-vla -fsanitize=address
 $(foreach obj,$(RYU_OBJECTS),build/$(obj).o): build/%.o: src/ryu/%.cpp $(HEADERS)
-	g++ $(CFLAGS) -o $@ -Os -DNDEBUG -c $<
+	$(CXX) $(CFLAGS) -o $@ -Os -DNDEBUG -c $<
 
 build/to_chars_tables.o build/from_chars.o: build/%.o: src/%.cpp  $(HEADERS)
-	g++ $(CFLAGS) -o $@ -Os -DNDEBUG -c $<
+	$(CXX) $(CFLAGS) -o $@ -Os -DNDEBUG -c $<
 build/to_chars.o: src/to_chars.cpp $(HEADERS)
-	g++ $(CFLAGS) -o $@ -Os -DNDEBUG -c $< -Wno-vla
+	$(CXX) $(CFLAGS) -o $@ -Os -DNDEBUG -c $< -Wno-vla
