@@ -48,9 +48,12 @@ namespace backports{
     to_chars_result to_chars(char*beg,char*end,  signed long long value,int base);
     to_chars_result to_chars(char*beg,char*end,unsigned long long value,int base);
     to_chars_result to_chars(char*,char*,bool,int=10)=delete;
-    to_chars_result to_chars(char*beg,char*end,      float value,chars_format fmt=chars_format{});
-    to_chars_result to_chars(char*beg,char*end,     double value,chars_format fmt=chars_format{});
-    to_chars_result to_chars(char*beg,char*end,long double value,chars_format fmt=chars_format{});
+    to_chars_result to_chars(char*beg,char*end,      float value);
+    to_chars_result to_chars(char*beg,char*end,     double value);
+    to_chars_result to_chars(char*beg,char*end,long double value);
+    to_chars_result to_chars(char*beg,char*end,      float value,chars_format fmt);
+    to_chars_result to_chars(char*beg,char*end,     double value,chars_format fmt);
+    to_chars_result to_chars(char*beg,char*end,long double value,chars_format fmt);
     to_chars_result to_chars(char*beg,char*end,      float value,chars_format fmt,int precision);
     to_chars_result to_chars(char*beg,char*end,     double value,chars_format fmt,int precision);
     to_chars_result to_chars(char*beg,char*end,long double value,chars_format fmt,int precision);

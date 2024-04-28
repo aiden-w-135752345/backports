@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "ryu/ryu_generic_128.hpp"
 #include "ryu/common.hpp"
-
+__extension__ using uint128_t = unsigned __int128;
 // Determine the binary format of 'long double'.
 
 // We support the binary64, float80 (i.e. x86 80-bit extended precision),
@@ -62,7 +62,7 @@ template<>struct floating_type_traits<long double>:template<>struct floating_typ
 		static constexpr int mantissa_bits = 64;
 		static constexpr int exponent_bits = 15;
 		using mantissa_t = uint128_t;
-		using shortest_scientific_t = ryu::generic128::floating_decimal_128;
+		using shortest_scientific_t = ryu::floating_decimal_128;
 		static const uint64_t pow10_adjustment_tab[];
 	};
 #elif LONG_DOUBLE_KIND == LDK_BINARY128

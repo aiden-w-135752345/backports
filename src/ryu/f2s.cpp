@@ -214,7 +214,7 @@ int to_chars(const floating_decimal_32 v, char* const result) {
   }
 
   uint32_t output = v.mantissa;
-  const uint32_t olength = decimalLength9(output);
+  const uint32_t olength = decimalLength(output);
 
 #ifdef RYU_DEBUG
   printf("DIGITS=%u\n", v.mantissa);
@@ -282,7 +282,7 @@ int to_chars(const floating_decimal_32 v, char* const result) {
   return index;
 }
 
-floating_decimal_32 floating_to_fd32(float f) {
+floating_decimal_32 floating_to_fd(float f) {
   // Step 1: Decode the floating-point number, and unify normalized and subnormal cases.
   const uint32_t bits = float_to_bits(f);
 

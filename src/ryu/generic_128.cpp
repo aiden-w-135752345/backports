@@ -20,8 +20,8 @@
 # include "generic_128.hpp"
 # include "ryu_generic_128.hpp"
 #include <cstring>
-
-namespace ryu{namespace generic128{
+using namespace ryu::generic128;
+namespace ryu{
 
 #ifdef RYU_DEBUG
 static char* s(uint128_t v) {
@@ -250,7 +250,7 @@ static inline int copy_special_str(char * const result, const struct floating_de
   return fd.sign + 8;
 }
 
-int generic_to_chars(const floating_decimal_128 v, char* const result) {
+int to_chars(const floating_decimal_128 v, char* const result) {
   if (v.exponent == FD128_EXCEPTIONAL_EXPONENT) {
     return copy_special_str(result, v);
   }
@@ -305,4 +305,4 @@ int generic_to_chars(const floating_decimal_128 v, char* const result) {
   index += elength;
   return index;
 }
-}}
+}

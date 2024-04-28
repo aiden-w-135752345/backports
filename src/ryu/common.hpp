@@ -42,7 +42,7 @@ typedef struct floating_decimal_64 {
   bool sign;
 } floating_decimal_64;
 // Returns the number of decimal digits in v, which must not contain more than 9 digits.
-static inline uint32_t decimalLength9(const uint32_t v) {
+static inline uint32_t decimalLength(const uint32_t v) {
   // Function precondition: v is not a 10-digit number.
   // (f2s: 9 digits are sufficient for round-tripping.)
   // (d2fixed: We print 9-digit blocks.)

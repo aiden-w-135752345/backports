@@ -187,7 +187,7 @@ static inline uint32_t mulShift_mod1e9(const uint64_t m, const uint64_t* const m
 // Convert `digits` to a sequence of decimal digits. Append the digits to the result.
 // The caller has to guarantee that:
 //   10^(olength-1) <= digits < 10^olength
-// e.g., by passing `olength` as `decimalLength9(digits)`.
+// e.g., by passing `olength` as `decimalLength(digits)`.
 static inline void append_n_digits(const uint32_t olength, uint32_t digits, char* const result) {
 #ifdef RYU_DEBUG
   printf("DIGITS=%u\n", digits);
@@ -224,7 +224,7 @@ static inline void append_n_digits(const uint32_t olength, uint32_t digits, char
 // Convert `digits` to a sequence of decimal digits. Print the first digit, followed by a decimal
 // dot '.' followed by the remaining digits. The caller has to guarantee that:
 //   10^(olength-1) <= digits < 10^olength
-// e.g., by passing `olength` as `decimalLength9(digits)`.
+// e.g., by passing `olength` as `decimalLength(digits)`.
 static inline void append_d_digits(const uint32_t olength, uint32_t digits, char* const result) {
 #ifdef RYU_DEBUG
   printf("DIGITS=%u\n", digits);
@@ -379,7 +379,7 @@ int d2fixed_buffered_n(double d, uint32_t precision, char* result) {
         append_nine_digits(digits, result + index);
         index += 9;
       } else if (digits != 0) {
-        const uint32_t olength = decimalLength9(digits);
+        const uint32_t olength = decimalLength(digits);
         append_n_digits(olength, digits, result + index);
         index += olength;
         nonzero = true;
@@ -575,7 +575,7 @@ int d2exp_buffered_n(double d, uint32_t precision, char* result, int* exp_out) {
         index += 9;
         printedDigits += 9;
       } else if (digits != 0) {
-        availableDigits = decimalLength9(digits);
+        availableDigits = decimalLength(digits);
         exp = i * 9 + (int32_t) availableDigits - 1;
         if (availableDigits > precision) {
           break;
@@ -616,7 +616,7 @@ int d2exp_buffered_n(double d, uint32_t precision, char* result, int* exp_out) {
         index += 9;
         printedDigits += 9;
       } else if (digits != 0) {
-        availableDigits = decimalLength9(digits);
+        availableDigits = decimalLength(digits);
         exp = -(i + 1) * 9 + (int32_t) availableDigits - 1;
         if (availableDigits > precision) {
           break;

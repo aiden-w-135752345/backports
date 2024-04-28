@@ -17,8 +17,7 @@
 #ifndef RYU_GENERIC_128_H
 #define RYU_GENERIC_128_H
 #include <stdint.h>
-__extension__ using uint128_t = unsigned __int128;
-namespace ryu{namespace generic128{
+namespace ryu{__extension__ using uint128_t = unsigned __int128;
 
 
 // NOTE: These symbols are declared extern "C" upstream, but we don't want that
@@ -52,7 +51,7 @@ struct floating_decimal_128 {
 // Maximal char buffer requirement:
 // sign + mantissa digits + decimal dot + 'E' + exponent sign + exponent digits
 // = 1 + 39 + 1 + 1 + 1 + 10 = 53
-int generic_to_chars(const floating_decimal_128 v, char* const result);
+int to_chars(const floating_decimal_128 v, char* const result);
 
-}}
+}
 #endif // RYU_GENERIC_128_H

@@ -35,7 +35,7 @@ namespace ryu{
 #define DOUBLE_MANTISSA_BITS 52
 #define DOUBLE_EXPONENT_BITS 11
 #define DOUBLE_BIAS 1023
-uint32_t decimalLength17(const uint64_t v) {
+uint32_t decimalLength(const uint64_t v) {
   // This is slightly faster than a loop.
   // The average output length is 16.38 digits, so we check high-to-low.
   // Function precondition: v is not an 18, 19, or 20-digit number.
@@ -292,7 +292,7 @@ int to_chars(const floating_decimal_64 v, char* const result) {
   }
 
   uint64_t output = v.mantissa;
-  const uint32_t olength = decimalLength17(output);
+  const uint32_t olength = decimalLength(output);
 
 #ifdef RYU_DEBUG
   printf("DIGITS=%" PRIu64 "\n", v.mantissa);
@@ -417,14 +417,14 @@ static inline bool d2d_small_int(const uint64_t ieeeMantissa, const uint32_t iee
 
   // f is an integer in the range [1, 2^53).
   // Note: mantissa might contain trailing (decimal) 0's.
-  // Note: since 2^53 < 10^16, there is no need to adjust decimalLength17().
+  // Note: since 2^53 < 10^16, there is no need to adjust decimalLength().
   v->mantissa = m2 >> -e2;
   v->exponent = 0;
   v->sign = ieeeSign;
   return true;
 }
 
-floating_decimal_64 floating_to_fd64(double f) {
+floating_decimal_64 floating_to_fd(double f) {
   // Step 1: Decode the floating-point number, and unify normalized and subnormal cases.
   const uint64_t bits = double_to_bits(f);
 

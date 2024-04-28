@@ -19,8 +19,20 @@
 #include <stdint.h>
 #include <cassert>
 
-namespace ryu{namespace generic128{
-__extension__ using uint128_t = unsigned __int128;
+namespace ryu{
+  __extension__ using uint128_t = unsigned __int128;
+  uint32_t decimalLength(const uint128_t v) {
+    static uint128_t LARGEST_POW10 = (((uint128_t) 5421010862427522170ull) << 64) | 687399551400673280ull;
+    uint128_t p10 = LARGEST_POW10;
+    for (uint32_t i = 39; i > 0; i--) {
+      if (v >= p10) {
+        return i;
+      }
+      p10 /= 10;
+    }
+    return 1;
+  }
+  namespace generic128{
 
 #define FLOAT_128_POW5_INV_BITCOUNT 249
 #define FLOAT_128_POW5_BITCOUNT 249
@@ -486,18 +498,6 @@ static inline uint128_t mulShift(const uint128_t m, const uint64_t* const mul, c
   uint64_t result[4];
   mul_128_256_shift(a, mul, j, 0, result);
   return (((uint128_t) result[1]) << 64) | result[0];
-}
-
-uint32_t decimalLength(const uint128_t v) {
-  static uint128_t LARGEST_POW10 = (((uint128_t) 5421010862427522170ull) << 64) | 687399551400673280ull;
-  uint128_t p10 = LARGEST_POW10;
-  for (uint32_t i = 39; i > 0; i--) {
-    if (v >= p10) {
-      return i;
-    }
-    p10 /= 10;
-  }
-  return 1;
 }
 
 // Returns floor(log_10(2^e)).

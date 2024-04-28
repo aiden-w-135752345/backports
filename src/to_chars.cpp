@@ -18,25 +18,53 @@
 #include <iomanip>
 #include <cstdint>
 using namespace backports;
+template<class T>struct ieee_t{
+	typename floating_type_traits<T>::mantissa_t mantissa;
+	int32_t exponent;
+	bool negative;
+};
+// Decompose the floating-point value into its IEEE components.
+template<class T>ieee_t<T>get_ieee_repr(T value){
+	constexpr int mantissa_bits = floating_type_traits<T>::mantissa_bits;
+	// frexp(T, int* exp );
+	//std::cout<<"value:  "<<std::hexfloat<<value<<'\n';
+	ieee_t<T> ieee_repr;
+	T mantissaFloat=std::scalbn(std::frexp(value,&ieee_repr.exponent),mantissa_bits+1);
+	ieee_repr.mantissa=mantissaFloat;
+
+	return ieee_repr;
+}
+
 namespace ryu{
 	int to_chars(const floating_decimal_32 v, char* const result);
 	int to_chars(const floating_decimal_64 v, char* const result);
+	int to_chars(const floating_decimal_128 v, char* const result);
 	int d2fixed_buffered_n(double d, uint32_t precision, char* result) ;
 	int d2exp_buffered_n(double d, uint32_t precision, char* result, int* exp_out) ;
-	floating_decimal_64 floating_to_fd64(double f);
-	floating_decimal_32 floating_to_fd32(float f);
-	uint32_t decimalLength17(const uint64_t v);
-	namespace generic128{
-		floating_decimal_128 generic_binary_to_decimal(
-			const uint128_t ieeeMantissa, const uint32_t ieeeExponent, const bool ieeeSign,
-			const uint32_t mantissaBits, const uint32_t exponentBits, const bool explicitLeadingBit);
-			uint32_t decimalLength(const uint128_t v);
+	floating_decimal_64 floating_to_fd(double f);
+	floating_decimal_32 floating_to_fd(float f);
+	uint32_t decimalLength(const uint32_t v);
+	uint32_t decimalLength(const uint64_t v);
+	uint32_t decimalLength(const uint128_t v);
+	floating_decimal_128 generic_binary_to_decimal(
+		const uint128_t ieeeMantissa, const uint32_t ieeeExponent, const bool ieeeSign,
+		const uint32_t mantissaBits, const uint32_t exponentBits, const bool explicitLeadingBit);
+
+	// Invoke Ryu to obtain the shortest scientific form for the given
+	// floating-point number.
+	floating_decimal_128 floating_to_fd(long double value){
+		ieee_t<long double>repr=get_ieee_repr(value);
+		using Traits=floating_type_traits<long double>;
+		return ryu::generic_binary_to_decimal(
+			repr.mantissa,repr.exponent+(1u<<(Traits::exponent_bits-1))-2,
+			repr.negative,Traits::mantissa_bits,Traits::exponent_bits,0);
 	}
-	int to_chars(const generic128::floating_decimal_128 v, char* const result){ return generic128::generic_to_chars(v, result); }
+
 } // namespace ryu
 template<unsigned char base,class T>static backports::to_chars_result to_chars_small(char* beg, char* end, T val){
 	using U = std::conditional_t<sizeof(T)<sizeof(uint32_t),uint32_t,std::conditional_t<sizeof(T)<sizeof(uint64_t),uint64_t,uint128_t>>;
 	U uval = val;
+	// std::errc::argument_out_of_domain
 	if(beg == end) return { end, std::errc::value_too_large };
 	if(val == 0){*beg = '0';return { beg + 1, std::errc{} };}
 	if(val < 0){*beg++ = '-';uval=U(~val)+1;}
@@ -77,14 +105,10 @@ template<class T>static backports::to_chars_result to_chars_32(char* beg, char* 
 }
 template<class T>static backports::to_chars_result to_chars(char* beg, char* end, T val, unsigned char base){
 	switch(base){
-		case 2:return to_chars_small<2>(beg,end,val);
-		case 3:return to_chars_small<3>(beg,end,val);
-		case 4:return to_chars_small<4>(beg,end,val);
-		case 5:return to_chars_small<5>(beg,end,val);
-		case 6:return to_chars_small<6>(beg,end,val);
-		case 7:return to_chars_small<7>(beg,end,val);
-		case 8:return to_chars_small<8>(beg,end,val);
-		case 9:return to_chars_small<9>(beg,end,val);
+		case 2:return to_chars_small<2>(beg,end,val);case 3:return to_chars_small<3>(beg,end,val);
+		case 4:return to_chars_small<4>(beg,end,val);case 5:return to_chars_small<5>(beg,end,val);
+		case 6:return to_chars_small<6>(beg,end,val);case 7:return to_chars_small<7>(beg,end,val);
+		case 8:return to_chars_small<8>(beg,end,val);case 9:return to_chars_small<9>(beg,end,val);
 		case 10:return to_chars_small<10>(beg,end,val);
 		case 16:return to_chars_16(beg,end,val);
 		case 32:return to_chars_32(beg,end,val);
@@ -128,38 +152,6 @@ namespace backports{
 	to_chars_result to_chars(char*beg,char*end,  signed long long val){return ::to_chars_small<10>(beg,end,val);}
 	to_chars_result to_chars(char*beg,char*end,unsigned long long val){return ::to_chars_small<10>(beg,end,val);}
 }
-
-template<typename T>struct ieee_t{
-	typename floating_type_traits<T>::mantissa_t mantissa;
-	uint32_t exponent;
-	bool sign;
-};
-// Decompose the floating-point value into its IEEE components.
-template<typename T>ieee_t<T>get_ieee_repr(const T value){
-	constexpr int mantissa_bits = floating_type_traits<T>::mantissa_bits;
-	// frexp(T, int* exp );
-	std::cout<<"value:  "<<std::hexfloat<<value<<'\n';
-	ieee_t<T> ieee_repr;
-	int32_t exponent;
-	T mantissaFloat=std::scalbn(std::frexp(value,&exponent),mantissa_bits+1);
-	ieee_repr.mantissa=mantissaFloat;
-	ieee_repr.exponent=exponent;
-
-	return ieee_repr;
-}
-// Invoke Ryu to obtain the shortest scientific form for the given
-// floating-point number.
-floating_type_traits<float>::shortest_scientific_t
-floating_to_shortest_scientific(const float value){return ryu::floating_to_fd32(value);}
-typename floating_type_traits<double>::shortest_scientific_t
-floating_to_shortest_scientific(const double value){return ryu::floating_to_fd64(value);}
-typename floating_type_traits<long double>::shortest_scientific_t
-floating_to_shortest_scientific(const long double value){
-	ieee_t<long double>repr=get_ieee_repr(value);
-	return ryu::generic128::generic_binary_to_decimal(repr.mantissa, repr.exponent+(1u<<(floating_type_traits<long double>::exponent_bits-1))-2, repr.sign,
-		floating_type_traits<long double>::mantissa_bits,
-		floating_type_traits<long double>::exponent_bits,0);
-}
 // This subroutine returns true if the shortest scientific form fd is a
 // positive power of 10, and the floating-point number that has this shortest
 // scientific form is smaller than this power of 10.
@@ -173,211 +165,263 @@ floating_to_shortest_scientific(const long double value){
 //
 // This subroutine inspects a lookup table to detect when fd is such a
 // "rounded up" power of 10.
-template<typename T> bool is_rounded_up_pow10_p(const typename floating_type_traits<T>::shortest_scientific_t fd){
+template<class T>static bool is_rounded_up_pow10_p(typename floating_type_traits<T>::shortest_scientific_t fd){
 	if (fd.exponent < 0 || fd.mantissa != 1) return false;
 	return(floating_type_traits<T>::pow10_adjustment_tab[fd.exponent/64]&(1ull<<(63-fd.exponent%64)));
 }
-int get_mantissa_length(const ryu::floating_decimal_32 fd){ return ryu::decimalLength9(fd.mantissa); }
-int get_mantissa_length(const ryu::floating_decimal_64 fd){ return ryu::decimalLength17(fd.mantissa); }
-int get_mantissa_length(const ryu::generic128::floating_decimal_128 fd){ return ryu::generic128::decimalLength(fd.mantissa); }
+static constexpr size_t operator""_len(const char*, size_t l)noexcept{ return l; }
 // This subroutine handles writing nan, inf and 0 in
 // all formatting modes.
-template<typename T> static optional<to_chars_result>to_chars_special(char* first, char* const last, const T value,const chars_format fmt, const int precision){
-	string_view str;
+template<class T> static optional<to_chars_result>to_chars_special(char* first, char* last, T value,chars_format fmt, int precision){
+	bool negative = std::signbit(value);
 	switch(std::fpclassify(value)){
-	case FP_INFINITE:str = "-inf";break;
-	case FP_NAN:str = "-nan";break;
+	case FP_INFINITE:
+		if (last-first < ptrdiff_t(negative + "inf"_len))
+			return {{last, std::errc::value_too_large}};
+		if (negative)*first++ = '-';
+		memcpy(first, "inf", "inf"_len);
+		return {{first + "inf"_len, std::errc{}}};
+	break;
+	case FP_NAN:
+		if (last-first < ptrdiff_t(negative + "nan"_len))
+			return {{last, std::errc::value_too_large}};
+		if (negative)*first++ = '-';
+		memcpy(first, "nan", "nan"_len);
+		return {{first + "nan"_len, std::errc{}}};
+	break;
 	case FP_ZERO:break;
 	default:case FP_SUBNORMAL:case FP_NORMAL:return nullopt;
 	}
-	if (!str.empty()){
-		// We're formatting +-inf or +-nan.
-		if (!std::signbit(value))str.remove_prefix(strlen("-"));
-		if (last - first < (ptrdiff_t)str.length())return {{last, std::errc::value_too_large}};
-		memcpy(first, &str[0], str.length());
-		return {{first + str.length(), std::errc{}}};
-	}
 	// We're formatting 0.
-	const bool sign = std::signbit(value);
-	int expected_output_length = sign + 1;
 	switch (fmt){
-	case chars_format::fixed:case chars_format::scientific:case chars_format::hex:
-		if (precision)expected_output_length += strlen(".") + precision;
-		if (fmt == chars_format::scientific)expected_output_length += strlen("e+00");
-		else if (fmt == chars_format::hex)expected_output_length += strlen("p+0");
-		if (last - first < expected_output_length)return {{last, std::errc::value_too_large}};
-		if (sign)*first++ = '-';
+	case chars_format::fixed:{
+		if (last-first < ptrdiff_t(negative + "0"_len + (precision>0?"."_len + precision:0)))
+			return {{last, std::errc::value_too_large}};
+		if (negative)*first++ = '-';
 		*first++ = '0';
-		if (precision){*first++ = '.';memset(first, '0', precision);first += precision;}
-		if (fmt == chars_format::scientific){memcpy(first, "e+00", 4);first += 4;}
-		else if (fmt == chars_format::hex){memcpy(first, "p+0", 3);first += 3;}
-		break;
-	case chars_format::general:default: // case chars_format{}:
-		if (last - first < expected_output_length)return {{last, std::errc::value_too_large}};
-		if (sign)*first++ = '-';
+		if (precision>0){*first++ = '.';memset(first, '0', precision);first += precision;}
+		return {{first, std::errc{}}};
+		}
+
+	case chars_format::scientific:{
+		if (last-first < ptrdiff_t(negative + "0"_len + (precision>0?"."_len + precision:0) + "e+00"_len))
+			return {{last, std::errc::value_too_large}};
+		if (negative)*first++ = '-';
 		*first++ = '0';
-		break;
+		if (precision>0){*first++ = '.';memset(first, '0', precision);first += precision;}
+		memcpy(first, "e+00", 4);first += 4;
+		return {{first, std::errc{}}};
 	}
-	return {{first, std::errc{}}};
+	case chars_format::hex:{
+		if (last-first < ptrdiff_t(negative + "0"_len + (precision>0?"."_len + precision:0) + "p+0"_len))
+			return {{last, std::errc::value_too_large}};
+		if (negative)*first++ = '-';
+		*first++ = '0';
+		if (precision>0){*first++ = '.';memset(first, '0', precision);first += precision;}
+		memcpy(first, "p+0", 3);first += 3;
+		return {{first, std::errc{}}};
+	}
+	case chars_format::general:
+		if (last-first < ptrdiff_t(negative+"0"_len)) return {{last, std::errc::value_too_large}};
+		if (negative)*first++ = '-';
+		*first++ = '0';
+		return {{first, std::errc{}}};
+	}
 }
+template<class T>static int count_trailing_zero(T value){
+	if(!value){return -1;}
+	size_t c=0;
+	value&=-value;
+	for(size_t i=std::numeric_limits<T>::digits/2;i;i>>=1){if(value&~((~(T)0)/((((T)1)<<i)+1))){c+=i;}}
+	return c;
+};
+template<class T>static int bit_width(T value){
+    int r=0;
+    for(int s=std::numeric_limits<T>::digits/2;s;s>>=1){if(value&((~(T)0)<<(s-1))){value>>=s;r+=s;}}
+    return r;
+}
+
 // This subroutine of the floating-point to_chars overloads performs
 // hexadecimal formatting.
-template<typename T>static to_chars_result to_chars_hex(char* first, char* const last, const T value,int precision){
+template<class T>static to_chars_result to_chars_hex(char* first, char* last, T value,int precision){
 	constexpr int mantissa_bits = floating_type_traits<T>::mantissa_bits;
 	using mantissa_t = typename floating_type_traits<T>::mantissa_t;
-	if (auto result = to_chars_special(first, last, value,chars_format::hex,precision<0?0:precision))
-		return *result;
+	if (auto result = to_chars_special(first, last, value,chars_format::hex,precision))return *result;
 	// Extract the sign, mantissa and exponent from the value.
-	const ieee_t<T> repr=get_ieee_repr(value);
-	mantissa_t ieee_mantissa = repr.mantissa;
-	const bool sign = repr.sign;
-
-	// Calculate the unbiased exponent.
-	int32_t unbiased_exponent=repr.exponent;
-	// Shift the mantissa so that its bitwidth is a multiple of 4.
-	constexpr unsigned rounded_mantissa_bits = (mantissa_bits + 3) / 4 * 4;
-	mantissa_t effective_mantissa = ieee_mantissa << (rounded_mantissa_bits - mantissa_bits);
+	ieee_t<T> repr=get_ieee_repr(value);
+	// repr.mantissa>>mantissa_bits == 1
 	// Compute the shortest precision needed to print this value exactly,
 	// disregarding trailing zeros.
-	constexpr int full_hex_precision = (mantissa_bits + 3) / 4;
-	const int trailing_zeros = std::__countr_zero(effective_mantissa) / 4;
-	const int shortest_full_precision = full_hex_precision - trailing_zeros;
-	int written_exponent = unbiased_exponent;
-	int effective_precision = precision<0?shortest_full_precision:precision;
-	int excess_precision = 0;
-	if (effective_precision < shortest_full_precision){
+	int shortest_full_precision = (mantissa_bits-count_trailing_zero(repr.mantissa) + 3) / 4;
+	if(precision<0){precision=shortest_full_precision;}
+	if(precision < shortest_full_precision){
 		// When limiting the precision, we need to determine how to round the
 		// least significant printed hexit. The following branchless
 		// bit-level-parallel technique computes whether to round up the
 		// mantissa bit at index N (according to round-to-nearest rules) when
 		// dropping N bits of precision, for each index N in the bit vector.
 		// This technique is borrowed from the MSVC implementation.
-		using bitvec = mantissa_t;
-		const bitvec round_bit = effective_mantissa << 1;
-		const bitvec has_tail_bits = round_bit - 1;
-		const bitvec lsb_bit = effective_mantissa;
-		const bitvec should_round = round_bit & (has_tail_bits | lsb_bit);
-
-		const int dropped_bits = 4*(full_hex_precision - effective_precision);
+		mantissa_t round_bit = repr.mantissa << 1, lsb_hexit=(mantissa_t{1}<<mantissa_bits)>>(4*precision);
+		mantissa_t has_tail_bits = round_bit - 1, lsb_bit = repr.mantissa;
+		mantissa_t should_round = round_bit & (has_tail_bits | lsb_bit);
 		// Mask out the dropped nibbles.
-		effective_mantissa >>= dropped_bits;
-		effective_mantissa <<= dropped_bits;
-		if (should_round & (mantissa_t{1} << dropped_bits)){
-			// Round up the least significant nibble.
-			effective_mantissa += mantissa_t{1} << dropped_bits;
-		}
-	}else{
-		excess_precision = effective_precision - shortest_full_precision;
-		effective_precision = shortest_full_precision;
+		repr.mantissa&=~(lsb_hexit-1);
+		repr.mantissa+=(should_round&lsb_hexit);
 	}
-	// Compute the leading hexit and mask it out from the mantissa.
-	char leading_hexit;
-		const auto nibble = unsigned(effective_mantissa >> rounded_mantissa_bits);
-		leading_hexit = '0' + nibble;
-		effective_mantissa &= ~(mantissa_t{0b11} << rounded_mantissa_bits);
 	// Now before we start writing the string, determine the total length of
 	// the output string and perform a single bounds check.
-	int expected_output_length = sign + 1;
-	if (effective_precision + excess_precision > 0) expected_output_length += strlen(".");
-	expected_output_length += effective_precision;
-	const int abs_written_exponent = abs(written_exponent);
-	expected_output_length += (abs_written_exponent >= 10000 ? strlen("p+ddddd")
-				: abs_written_exponent >= 1000 ? strlen("p+dddd")
-				: abs_written_exponent >= 100 ? strlen("p+ddd")
-				: abs_written_exponent >= 10 ? strlen("p+dd")
-				: strlen("p+d"));
-	if (last - first < expected_output_length || last - first - expected_output_length < excess_precision)
-		return {last, std::errc::value_too_large};
-	char* const expected_output_end = first + expected_output_length + excess_precision;
+	int abs_exponent = abs(repr.exponent);
+	if (last-first < ptrdiff_t(repr.negative + "d"_len + (precision>0?"."_len:0) + precision + (
+		abs_exponent >= 10000 ? "p+ddddd"_len :
+		abs_exponent >= 1000 ? "p+dddd"_len :
+		abs_exponent >= 100 ? "p+ddd"_len :
+		abs_exponent >= 10 ? "p+dd"_len : "p+d"_len
+	))) return {last, std::errc::value_too_large};
 	// Write the negative sign and the leading hexit.
-	if (sign)*first++ = '-';
-	*first++ = leading_hexit;
-
-	if (effective_precision + excess_precision > 0)*first++ = '.';
-	if (effective_precision > 0){
-		int written_hexits = 0;
-		// Extract and mask out the leading nibble after the decimal point,
-		// write its corresponding hexit, and repeat until the mantissa is
-		// empty.
-		int nibble_offset = rounded_mantissa_bits;
-		while (effective_mantissa != 0){
-			nibble_offset -= 4;
-			const auto nibble = unsigned(effective_mantissa >> nibble_offset);
-			*first++ = "0123456789abcdef"[nibble];
-			++written_hexits;
-			effective_mantissa &= ~(mantissa_t{0b1111} << nibble_offset);
+	if (repr.negative)*first++ = '-';
+	*first++ = '0' + int(repr.mantissa>>mantissa_bits);
+	if (precision > 0){
+		*first++ = '.';
+		// Write the rest of the mantissa
+		size_t digits=0;
+		while (repr.mantissa&((mantissa_t{1}<<mantissa_bits)-1)){
+			repr.mantissa<<=4;
+			first[digits++] = "0123456789abcdef"[0xf&int(repr.mantissa>>mantissa_bits)];
 		}
-		// Since the mantissa is now empty, every hexit hereafter must be '0'.
-		if (int remaining_hexits = effective_precision - written_hexits) {
-			memset(first, '0', remaining_hexits);
-			first += remaining_hexits;
-		}
-	}
-
-	if (excess_precision > 0){
-		memset(first, '0', excess_precision);
-		first += excess_precision;
+		memset(first+digits, '0', precision-digits);
+		first+=precision;
 	}
 	// Finally, write the exponent.
 	*first++ = 'p';
-	if (written_exponent >= 0)*first++ = '+';
-	const to_chars_result result = to_chars_small<10>(first, last, written_exponent);
-	__glibcxx_assert(result.ec == std::errc{} && result.ptr == expected_output_end);
-	return result;
+	if (repr.exponent >= 0)*first++ = '+';
+	return to_chars_small<10>(first, last, repr.exponent);
 }
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wabi"
-template<typename T, typename... Extra> inline int sprintf_ld(char* buffer,const char* format_string, T value, Extra... args){
-#if _GLIBCXX_USE_C99_FENV_TR1 && defined(FE_TONEAREST)
-	const int saved_rounding_mode = fegetround();
-	if (saved_rounding_mode != FE_TONEAREST)fesetround(FE_TONEAREST); // We want round-to-nearest behavior.
-#endif
-	int len = sprintf(buffer, format_string, args..., value);
-#if _GLIBCXX_USE_C99_FENV_TR1 && defined(FE_TONEAREST)
-	if (saved_rounding_mode != FE_TONEAREST)fesetround(saved_rounding_mode);
-#endif
+template<class... Args> static int snprintf_tonearest(char* buffer,size_t maxlen,const char* format, Args... args){
+	int mode=fegetround();fesetround(FE_TONEAREST);
+	int len = snprintf(buffer,maxlen+1,format, args...);
+	fesetround(mode);
 	return len;
 }
-#pragma GCC diagnostic pop
-template<typename T>static to_chars_result to_chars_short(char* first, char* const last, const T value,chars_format fmt){
-	if (fmt == chars_format::hex){return to_chars_hex(first, last, value, -1);}
-	if (auto result = to_chars_special(first, last, value, fmt, 0))return *result;
-	const auto fd = floating_to_shortest_scientific(value);
-	const int mantissa_length = get_mantissa_length(fd);
-	const int scientific_exponent = fd.exponent + mantissa_length - 1;
-	if (fmt == chars_format::general){
-		// Resolve the 'general' formatting mode as per the specification of
-		// the 'g' printf output specifier. Since there is no precision
-		// argument, the default precision of the 'g' specifier, 6, applies.
-		if (scientific_exponent >= -4 && scientific_exponent < 6)fmt = chars_format::fixed;
-		else fmt = chars_format::scientific;
-	}else if (fmt == chars_format{}){
-		// The 'plain' formatting mode resolves to 'scientific' if it yields
-		// the shorter string, and resolves to 'fixed' otherwise. The
-		// following lower and upper bounds on the exponent characterize when
-		// to prefer 'fixed' over 'scientific'.
-		int lower_bound = -(mantissa_length + 3);
-		int upper_bound = 5;
-		if (mantissa_length == 1)
-			// The decimal point in scientific notation will be omitted in this
-			// case; tighten the bounds appropriately.
-			++lower_bound, --upper_bound;
+/*
+static inline uint32_t mulShift0_mod1e9(const uint64_t m, const uint64_t* const mul, const int32_t j) {
+	const uint128_t v= (((uint128_t) m * mul[1]) + (uint64_t) (((uint128_t) m * mul[0]) >> 64)) >> j;
+	//const uint128_t v0=((uint128_t) m * 3906250u) >> j;
+	//const uint128_t v1=(((uint128_t) m * 59u) + (uint64_t) (((uint128_t) m * 11153727427136454656u) >> 64)) >> j;
+	//const uint128_t v2=((uint64_t) (((uint128_t) m * 16777216000000000u) >> 64)) >> j;
+	//const uint128_t v3=((uint64_t) (((uint128_t) m * 256000000000u) >> 64)) >> j;
 
-		if (fd.exponent >= lower_bound && fd.exponent <= upper_bound) fmt = chars_format::fixed;
-		else fmt = chars_format::scientific;
-	}
+	uint128_t hi;
+	const uint64_t aLo = (uint64_t)v;
+	const uint32_t aHi = (uint64_t)(v >> 64); 
+	const uint128_t b00 = (uint128_t)aLo * 0x31680A88F8953031u;
+	const uint128_t b01 = (uint128_t)aLo * 0x89705F4136B4A597u;
+	const uint128_t b10 = (uint128_t)aHi * 0x31680A88F8953031u;
+	const uint64_t b11 = aHi * 0x89705F4136B4A597u;
+	const uint128_t mid1 = b10 + (uint64_t)(b00 >> 64);
+	const uint64_t multiplied = b11 + (uint64_t)(mid1 >> 64)+(uint64_t)((b01 + (uint64_t)(mid1)) >> 64);
+	// For uint32_t truncation, see the mod1e9() comment in d2s_intrinsics.h.
+	return ((uint32_t) v) - 1000000000 * (uint32_t) (multiplied >> 29);
+}
+int d2fixed_buffered_n(double d, char* result) {
+  const uint64_t bits = double_to_bits(d);
+  // Decode bits into sign, mantissa, and exponent.
+  const bool ieeeSign = ((bits >> (DOUBLE_MANTISSA_BITS + DOUBLE_EXPONENT_BITS)) & 1) != 0;
+  const uint64_t ieeeMantissa = bits & ((1ull << DOUBLE_MANTISSA_BITS) - 1);
+  const int32_t ieeeExponent = (int32_t) ((bits >> DOUBLE_MANTISSA_BITS) & ((1u << DOUBLE_EXPONENT_BITS) - 1)) - DOUBLE_BIAS;
+
+  int32_t e2 = ieeeExponent - DOUBLE_MANTISSA_BITS;
+  uint64_t m2 = (1ull << DOUBLE_MANTISSA_BITS) | ieeeMantissa;
+  int index = 0;
+  bool zero = true;
+  if (ieeeSign) {result[index++] = '-';}
+  if (ieeeExponent >= 0) {
+    const uint32_t idx = e2 < 0 ? 0 : indexForExponent((uint32_t) e2);
+    const uint32_t p10bits = pow10BitsForIndex(idx);
+    const int32_t len = (int32_t) lengthForIndex(idx);
+    for (int32_t i = len - 1; i >= 0; --i) {
+      const uint32_t j = p10bits - e2;
+      // Temporary: j is usually around 128, and by shifting a bit, we push it to 128 or above, which is
+      // a slightly faster code path in mulShift_mod1e9. Instead, we can just increase the multipliers.
+      const uint32_t digits = mulShift_mod1e9(m2 << 8, POW10_SPLIT[POW10_OFFSET[idx] + i], (int32_t) (j + 8));
+      if (!zero) {
+        append_nine_digits(digits, result + index);
+        index += 9;
+      } else if (digits != 0) {
+        const uint32_t olength = decimalLength(digits);
+        append_n_digits(olength, digits, result + index);
+        index += olength;
+        zero = false;
+      }
+    }
+  }
+  if (zero) {result[index++] = '0';}
+const uint64_t table[4][2] = {
+  {                   0u,              3906250u },
+  {11153727427136454656u,                   59u },
+  {   16777216000000000u,                    0u },
+  {        256000000000u,                    0u },
+  };
+  if (ieeeExponent < DOUBLE_MANTISSA_BITS) {
+    const int32_t idx = (DOUBLE_MANTISSA_BITS-ieeeExponent) / 16;// 0...3
+    // 0 = don't round up; 1 = round up unconditionally; 2 = round up if odd.
+    int roundUp = 0;
+    uint32_t digits = mulShift0_mod1e9(m2 << 8, table[idx], (DOUBLE_MANTISSA_BITS-ieeeExponent)%16);
+    uint32_t lastDigit = 0;
+    for (uint32_t k = 0; k < 9; ++k) {
+      lastDigit = digits % 10;
+      digits /= 10;
+    }
+    if (lastDigit != 5) {
+      roundUp = lastDigit > 5;
+    } else {
+      // Is m * 10^(additionalDigits + 1) / 2^(-e2) integer?
+      roundUp = multipleOfPowerOf2(m2, (uint32_t) (DOUBLE_MANTISSA_BITS-ieeeExponent - 1) ) ? 2 : 1;
+    }
+    if (roundUp != 0) {
+      int roundIndex = index;
+      int dotIndex = 0; // '.' can't be located at index 0
+      while (true) {
+        --roundIndex;
+        char c;
+        if (roundIndex == -1 || (c = result[roundIndex], c == '-')) {
+          result[roundIndex + 1] = '1';
+          if (dotIndex > 0) {
+            result[dotIndex] = '0';
+            result[dotIndex + 1] = '.';
+          }
+          result[index++] = '0';
+          break;
+        }
+        if (c == '.') {
+          dotIndex = roundIndex;
+          continue;
+        } else if (c == '9') {
+          result[roundIndex] = '0';
+          roundUp = 1;
+          continue;
+        } else {
+          if (roundUp == 2 && c % 2 == 0) {
+            break;
+          }
+          result[roundIndex] = c + 1;
+          break;
+        }
+      }
+    }
+  }
+  return index;
+}
+*/
+template<class T>static to_chars_result to_chars_short(char* first, char* last, T value,chars_format fmt,typename floating_type_traits<T>::shortest_scientific_t fd,int mantissa_length){
 	if (fmt == chars_format::scientific){
 		// Calculate the total length of the output string, perform a bounds
 		// check, and then defer to Ryu's to_chars subroutine.
-		int expected_output_length = fd.sign + mantissa_length;
-		if (mantissa_length > 1)expected_output_length += strlen(".");
-		const int abs_exponent = abs(scientific_exponent);
-		expected_output_length += (abs_exponent >= 1000 ? strlen("e+dddd")
-					: abs_exponent >= 100 ? strlen("e+ddd")
-					: strlen("e+dd"));
-		if (last - first < expected_output_length)return {last, std::errc::value_too_large};
-		const int output_length = ryu::to_chars(fd, first);
-		return {first + output_length, std::errc{}};
+		int abs_exponent = abs(fd.exponent + mantissa_length - 1);
+		if (last-first < ptrdiff_t(fd.sign + mantissa_length+ (mantissa_length > 1?"."_len:0) + (
+			abs_exponent >= 1000 ? "e+dddd"_len :
+			abs_exponent >= 100 ? "e+ddd"_len : "e+dd"_len
+		)))return {last, std::errc::value_too_large};
+		return {first + ryu::to_chars(fd, first), std::errc{}};
 	}
 	else if (fmt == chars_format::fixed && fd.exponent >= 0){
 		// The Ryu exponent is positive, and so this number's shortest
@@ -397,7 +441,7 @@ template<typename T>static to_chars_result to_chars_short(char* first, char* con
 		// check.
 		int expected_output_length = fd.sign + mantissa_length + fd.exponent;
 		if (is_rounded_up_pow10_p<T>(fd))--expected_output_length;
-		if (last - first < expected_output_length)return {last, std::errc::value_too_large};
+		if (last-first < expected_output_length)return {last, std::errc::value_too_large};
 
 		// Optimization: if the shortest representation fits inside the IEEE
 		// mantissa, then the number is certainly exactly-representable and
@@ -413,14 +457,13 @@ template<typename T>static to_chars_result to_chars_short(char* first, char* con
 		//
 		// After adding some wiggle room due to rounding we get the condition
 		// value_fits_inside_mantissa_p below.
-		const int log2_mantissa = std::__bit_width(fd.mantissa) - 1;
-		const bool value_fits_inside_mantissa_p
+		int log2_mantissa = bit_width(fd.mantissa) - 1;
+		bool value_fits_inside_mantissa_p
 			= (log2_mantissa + (fd.exponent*10 + 2) / 3 < floating_type_traits<T>::mantissa_bits - 2);
 		if (value_fits_inside_mantissa_p){
 			// Print the small exactly-representable number in fixed form by
 			// writing out fd.mantissa followed by fd.exponent many 0s.
-			if (fd.sign)
-			*first++ = '-';
+			if (fd.sign)*first++ = '-';
 			to_chars_result result = to_chars_small<10>(first, last, fd.mantissa);
 			memset(result.ptr, '0', fd.exponent);
 			result.ptr += fd.exponent;
@@ -434,13 +477,12 @@ template<typename T>static to_chars_result to_chars_short(char* first, char* con
 			// digit, and carefully compute and write the last digit
 			// ourselves.
 			char buffer[expected_output_length + 1];
-			const int output_length = sprintf_ld(buffer,
-							"%.0Lf", value);
+			int output_length = snprintf_tonearest(buffer,expected_output_length,"%.0Lf", value);
 			memcpy(first, buffer, output_length);
 			return {first + output_length, std::errc{}};
 		}else{
 			// Otherwise, the number is too big, so defer to d2fixed_buffered_n.
-			const int output_length = ryu::d2fixed_buffered_n(value, 0, first);
+			int output_length = ryu::d2fixed_buffered_n(value, 0, first);
 			return {first + output_length, std::errc{}};
 		}
 	}else if (fmt == chars_format::fixed && fd.exponent < 0){
@@ -449,16 +491,15 @@ template<typename T>static to_chars_result to_chars_short(char* first, char* con
 		// fd.exponent contain all of the information needed to format the
 		// number in fixed notation "as if by std::printf" (with precision
 		// equal to -fd.exponent).
-		const int whole_digits = std::max<int>(mantissa_length + fd.exponent, 1);
-		const int expected_output_length = fd.sign + whole_digits + strlen(".") + -fd.exponent;
-		if (last - first < expected_output_length)return {last, std::errc::value_too_large};
+		int whole_digits = std::max<int>(mantissa_length + fd.exponent, 1);
+		if (last-first < ptrdiff_t(fd.sign + whole_digits + "."_len - fd.exponent))return {last, std::errc::value_too_large};
 		if (mantissa_length <= -fd.exponent){
 			// The magnitude of the number is less than one.  Format the
 			// number appropriately.
 			if (fd.sign)*first++ = '-';
 			*first++ = '0';
 			*first++ = '.';
-			const int leading_zeros = -fd.exponent - mantissa_length;
+			int leading_zeros = -fd.exponent - mantissa_length;
 			memset(first, '0', leading_zeros);
 			first += leading_zeros;
 			return to_chars_small<10>(first, last, fd.mantissa);
@@ -474,29 +515,60 @@ template<typename T>static to_chars_result to_chars_short(char* first, char* con
 	}
 	__builtin_unreachable();
 }
-template<typename T>static to_chars_result
-to_chars_prec(char* first, char* const last, const T value,chars_format fmt, const int precision){
+template<class T>static to_chars_result to_chars_plain(char* first, char* last, T value){
+	if (auto result = to_chars_special(first, last, value, chars_format::general, 0))return *result;
+	auto fd = ryu::floating_to_fd(value);
+	int mantissa_length = ryu::decimalLength(fd.mantissa);
+	// The 'plain' formatting mode resolves to 'scientific' if it yields
+	// the shorter string, and resolves to 'fixed' otherwise. The
+	// following lower and upper bounds on the exponent characterize when
+	// to prefer 'fixed' over 'scientific'.
+	int lower_bound = -(mantissa_length + 3);
+	int upper_bound = 5;
+	if (mantissa_length == 1)
+		// The decimal point in scientific notation will be omitted in this
+		// case; tighten the bounds appropriately.
+		++lower_bound, --upper_bound;
+	return to_chars_short(
+		first,last,value,
+		(fd.exponent >= lower_bound && fd.exponent <= upper_bound)?chars_format::fixed:chars_format::scientific,
+		fd,mantissa_length
+	);
+
+};
+
+template<class T>static to_chars_result to_chars_fmt(char* first, char* last, T value,chars_format fmt){
+	if (fmt == chars_format::hex){return to_chars_hex(first, last, value, -1);}
+	if (auto result = to_chars_special(first, last, value, fmt, 0))return *result;
+	auto fd = ryu::floating_to_fd(value);
+	int mantissa_length = ryu::decimalLength(fd.mantissa);
+	if (fmt == chars_format::general){
+		// Resolve the 'general' formatting mode as per the specification of
+		// the 'g' printf output specifier. Since there is no precision
+		// argument, the default precision of the 'g' specifier, 6, applies.
+		int scientific_exponent = fd.exponent + mantissa_length - 1;
+		if (-4<=scientific_exponent && scientific_exponent < 6)fmt = chars_format::fixed;
+		else fmt = chars_format::scientific;
+	}
+	return to_chars_short(first,last,value,fmt,fd,mantissa_length);
+}
+template<class T>static to_chars_result to_chars_prec(char* first, char* last, T value,chars_format fmt, int precision){
 	if (fmt == chars_format::hex)return to_chars_hex(first, last, value, precision);
-	if (precision < 0)
-		// A negative precision argument is treated as if it were omitted, in
-		// which case the default precision of 6 applies, as per the printf
-		// specification.
-		return to_chars_prec(first, last, value, fmt, 6);
-	if (auto result = to_chars_special(first, last, value,fmt, precision))
-		return *result;
+	if (precision < 0)precision=6;
+	if (auto result = to_chars_special(first, last, value,fmt, precision))return *result;
 	constexpr int mantissa_bits = floating_type_traits<T>::mantissa_bits;
 	// Extract the sign and exponent from the value.
-	const ieee_t<T> repr=get_ieee_repr(value);
-	const bool sign = repr.sign;
-	// Calculate the unbiased exponent.
-	const int32_t unbiased_exponent = repr.exponent;
-	// Obtain trunc(log2(abs(value))), which is just the unbiased exponent.
-	const int floor_log2_value = unbiased_exponent;
-	// This is within +-1 of log10(abs(value)). Note that log10 2 is 0.3010..
-	const int approx_log10_value = (floor_log2_value >= 0
-					? (floor_log2_value*301 + 999)/1000
-					: (floor_log2_value*301 - 999)/1000);
-
+	ieee_t<T> repr=get_ieee_repr(value);
+	int exp_sign=(repr.exponent>0)-(repr.exponent<0);
+	// this is below log10(abs(value))
+	// 21306/70777 is slightly less than log10 2
+	//int lower_log10_value = (repr.exponent-exp_sign)*21306/70777;
+	// this is above log10(abs(value))
+	// 4004/13301 is slightly greater than log10 2.
+	int upper_log10_value = repr.exponent*4004/13301+exp_sign;
+	// This is within +-0.651 of log10(abs(value)).
+	// 8008/26602 is an approximation of log10 2, 9297/26602 is an approximation of (1-log10 2)/2
+	//int approx_log10_value = (repr.exponent*8008 + exp_sign*9297)/26602;
 	// Compute (an upper bound of) the number's effective precision when it is
 	// formatted in scientific and fixed notation.  Beyond this precision all
 	// digits are definitely zero, and this fact allows us to bound the sizes
@@ -507,14 +579,14 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 	// bounds below is necessary only for __ibm128, it seems.  Even though the
 	// type has 105 bits of precision, printf may output 106 fractional digits
 	// on some inputs, e.g. 0x1.bcd19f5d720d12a3513e3301028p+0.
-	const int max_eff_scientific_precision
-		= (floor_log2_value >= 0
-		? std::max(mantissa_bits + 1, approx_log10_value + 1)
-		: -(7*floor_log2_value + 9)/10 + 2 + mantissa_bits + 1);
-	const int max_eff_fixed_precision
-		= (floor_log2_value >= 0
+	int max_eff_scientific_precision
+		= (repr.exponent >= 0
+		? std::max(mantissa_bits + 1, upper_log10_value)
+		: -(7*repr.exponent + 9)/10 + 2 + mantissa_bits + 1);
+	int max_eff_fixed_precision
+		= (repr.exponent >= 0
 		? mantissa_bits + 1
-		: -floor_log2_value + mantissa_bits + 1);
+		: -repr.exponent + mantissa_bits + 1);
 	// Ryu doesn't support formatting floating-point types larger than double
 	// with an explicit precision, so instead we just go through printf.
 	if (is_same_v<T, long double>){
@@ -530,58 +602,37 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 			effective_precision = std::min(precision, max_eff_scientific_precision);
 			output_specifier = "%.*Lg";
 		}else __builtin_unreachable();
-		const int excess_precision = (fmt != chars_format::general
-			? precision - effective_precision : 0);
+		int excess_precision = (fmt != chars_format::general? precision - effective_precision : 0);
 		// Since the output of printf is locale-sensitive, we need to be able
 		// to handle a radix point that's different from '.'.
-		char radix[6] = {'.', '\0', '\0', '\0', '\0', '\0'};
-		#ifdef RADIXCHAR
-		if (effective_precision > 0)
-		// ???: Can nl_langinfo() ever return null?
-		if (const char* const radix_ptr = nl_langinfo(RADIXCHAR)){
-			strncpy(radix, radix_ptr, sizeof(radix)-1);
-			// We accept only radix points which are at most 4 bytes (one
-			// UTF-8 character) wide.
-			__glibcxx_assert(radix[4] == '\0');
-		}
-		#endif
+		char radix_buf[10];
+		string_view radix = effective_precision?string_view(radix_buf+1,snprintf(radix_buf,10,"%.1f", 0.0)-2):"."_sv;
 		// Compute straightforward upper bounds on the output length.
 		int output_length_upper_bound;
-		if (fmt == chars_format::scientific || fmt == chars_format::general)
-			output_length_upper_bound = (strlen("-d") + sizeof(radix)
-						+ effective_precision
-						+ strlen("e+dddd"));
-		else if (fmt == chars_format::fixed){
-			if (approx_log10_value >= 0)
-			output_length_upper_bound = sign + approx_log10_value + 1;
-			else
-			output_length_upper_bound = sign + strlen("0");
-			output_length_upper_bound += sizeof(radix) + effective_precision;
-		}
-		else __builtin_unreachable();
+		if (fmt == chars_format::fixed){
+			if (repr.exponent >= 0) output_length_upper_bound = repr.negative + upper_log10_value;
+			else output_length_upper_bound = repr.negative + "0"_len + radix.length() + effective_precision;
+		}else{output_length_upper_bound = ("-d"_len+radix.length()+effective_precision+"e+dddd"_len);}
 		// Do the sprintf into the local buffer.
 		char buffer[output_length_upper_bound + 1];
-		int output_length
-			= sprintf_ld(buffer, output_specifier,value, effective_precision);
+		int output_length = snprintf_tonearest(buffer,output_length_upper_bound, output_specifier,effective_precision,value);
 		if (effective_precision > 0){
 			// We need to replace a radix that is different from '.' with '.'.
-			const string_view radix_sv = {radix}; 
-			if (radix_sv != "."){
-				const string_view buffer_sv = {buffer, (size_t)output_length};
-				const size_t radix_index = buffer_sv.find(radix_sv);
+			if (radix != "."){
+				size_t radix_index = string_view{buffer, (size_t)output_length}.find(radix);
 				if (radix_index != string_view::npos){
 					buffer[radix_index] = '.';
-					if (radix_sv.length() > 1){
+					if (radix.length() > 1){
 						memmove(&buffer[radix_index + 1],
-							&buffer[radix_index + radix_sv.length()],
-							output_length - radix_index - radix_sv.length());
-						output_length -= radix_sv.length() - 1;
+							&buffer[radix_index + radix.length()],
+							output_length - radix_index - radix.length());
+						output_length -= radix.length() - 1;
 					}
 				}
 			}
 		}
 		// Copy the string from the buffer over to the output range.
-		if (last - first < output_length|| last - first - output_length < excess_precision)
+		if (last-first < output_length+excess_precision)
 			return {last, std::errc::value_too_large};
 		memcpy(first, buffer, output_length);
 		first += output_length;
@@ -589,7 +640,7 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 		// Add the excess 0s to the result.
 		if (excess_precision > 0){
 			if (fmt == chars_format::scientific){
-				char* const significand_end
+				char* significand_end
 				= (output_length >= 6 && first[-6] == 'e' ? &first[-6]
 					: first[-5] == 'e' ? &first[-5]
 					: &first[-4]);
@@ -604,39 +655,32 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 		}
 		return {first, std::errc{}};
 	}else if (fmt == chars_format::scientific){
-		const int effective_precision= std::min(precision, max_eff_scientific_precision);
-		const int excess_precision = precision - effective_precision;
+		int effective_precision= std::min(precision, max_eff_scientific_precision);
+		int excess_precision = precision - effective_precision;
 		// We can easily compute the output length exactly whenever the
 		// scientific exponent is far enough away from +-100. But if it's
 		// near +-100, then our log2 approximation is too coarse (and doesn't
 		// consider precision-dependent rounding) in order to accurately
 		// distinguish between a scientific exponent of +-100 and +-99.
-		const bool scientific_exponent_near_100_p
-			= abs(abs(floor_log2_value) - 332) <= 4;
-
 		// Compute an upper bound on the output length. TODO: Maybe also
 		// consider a lower bound on the output length.
-		int output_length_upper_bound = sign + strlen("d");
-		if (effective_precision > 0)output_length_upper_bound += strlen(".") + effective_precision;
-		if (scientific_exponent_near_100_p|| (floor_log2_value >= 332 || floor_log2_value <= -333))
-			output_length_upper_bound += strlen("e+ddd");
-		else output_length_upper_bound += strlen("e+dd");
+		int output_length_upper_bound = repr.negative + "d"_len+ (effective_precision > 0?"."_len + effective_precision:0);
+		if (abs(repr.exponent)>=328)output_length_upper_bound += "e+ddd"_len;
+		else output_length_upper_bound += "e+dd"_len;
 		int output_length;
-		if (last - first >= output_length_upper_bound && last - first - output_length_upper_bound >= excess_precision){
+		if (last-first >= output_length_upper_bound + excess_precision){
 			// The result will definitely fit into the output range, so we can
 			// write directly into it.
 			output_length = ryu::d2exp_buffered_n(value, effective_precision,
 								first, nullptr);
-		}else if (scientific_exponent_near_100_p){
+		}else if (abs(abs(repr.exponent) - 332) <= 4){
 			// Write the result of d2exp_buffered_n into an intermediate
 			// buffer, do a bounds check, and copy the result into the output
 			// range.
 			char buffer[output_length_upper_bound];
 			output_length = ryu::d2exp_buffered_n(value, effective_precision,
 								buffer, nullptr);
-			__glibcxx_assert(output_length == output_length_upper_bound - 1
-						|| output_length == output_length_upper_bound);
-			if (last - first < output_length|| last - first - output_length < excess_precision)
+			if (last-first < output_length+excess_precision)
 				return {last, std::errc::value_too_large};
 			memcpy(first, buffer, output_length);
 		}else
@@ -647,39 +691,34 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 		first += output_length;
 		if (excess_precision > 0){
 			// Splice the excess zeros into the result.
-			char* const significand_end = (first[-5] == 'e'? &first[-5] : &first[-4]);
+			char* significand_end = (first[-5] == 'e'? &first[-5] : &first[-4]);
 			memmove(significand_end + excess_precision, significand_end,first - significand_end);
 			memset(significand_end, '0', excess_precision);
 			first += excess_precision;
 		}
 		return {first, std::errc{}};
 	}else if (fmt == chars_format::fixed){
-		const int effective_precision
-			= std::min(precision, max_eff_fixed_precision);
-		const int excess_precision = precision - effective_precision;
+		int effective_precision = std::min(precision, max_eff_fixed_precision);
+		int excess_precision = precision - effective_precision;
 
 		// Compute an upper bound on the output length.  TODO: Maybe also
 		// consider a lower bound on the output length.
 		int output_length_upper_bound;
-		if (approx_log10_value >= 0)output_length_upper_bound = sign + approx_log10_value + 1;
-		else output_length_upper_bound = sign + strlen("0");
-		if (effective_precision > 0)output_length_upper_bound += strlen(".") + effective_precision;
+		if (repr.exponent >= 0)output_length_upper_bound = repr.negative + upper_log10_value;
+		else output_length_upper_bound = repr.negative + "0"_len;
+		if (effective_precision > 0)output_length_upper_bound += "."_len + effective_precision;
 		int output_length;
-		if (last - first >= output_length_upper_bound&& last - first - output_length_upper_bound >= excess_precision){
+		if (last-first >= output_length_upper_bound + excess_precision){
 			// The result will definitely fit into the output range, so we can
 			// write directly into it.
-			output_length = ryu::d2fixed_buffered_n(value, effective_precision,
-								first);
+			output_length = ryu::d2fixed_buffered_n(value, effective_precision,first);
 		}else{
 			// Write the result of d2fixed_buffered_n into an intermediate
 			// buffer, do a bounds check, and copy the result into the output
 			// range.
 			char buffer[output_length_upper_bound];
-			output_length = ryu::d2fixed_buffered_n(value, effective_precision,
-								buffer);
-			__glibcxx_assert(output_length <= output_length_upper_bound);
-			if (last - first < output_length
-			|| last - first - output_length < excess_precision)
+			output_length = ryu::d2fixed_buffered_n(value, effective_precision,buffer);
+			if (last-first < output_length+excess_precision )
 				return {last, std::errc::value_too_large};
 			memcpy(first, buffer, output_length);
 		}
@@ -695,10 +734,8 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 		// specifier. Since Ryu doesn't do zero-trimming, we always write to
 		// an intermediate buffer and manually perform zero-trimming there
 		// before copying the result over to the output range.
-		int effective_precision
-			= std::min(precision, max_eff_scientific_precision + 1);
-		const int output_length_upper_bound
-			= strlen("-d.") + effective_precision + strlen("e+ddd");
+		int effective_precision = std::min(precision, max_eff_scientific_precision + 1);
+		int output_length_upper_bound = "-d."_len + effective_precision + "e+ddd"_len;
 		// The four bytes of headroom is to avoid needing to do a memmove when
 		// rewriting a scientific form such as 1.00e-2 into the equivalent
 		// fixed form 0.001.
@@ -711,19 +748,13 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 		// scientific exponent.
 		int scientific_exponent;
 		char* buffer_start = buffer + 4;
-		int output_length
-			= ryu::d2exp_buffered_n(value, effective_precision - 1,
-						buffer_start, &scientific_exponent);
-		__glibcxx_assert(output_length <= output_length_upper_bound);
-
+		int output_length = ryu::d2exp_buffered_n(value, effective_precision - 1,buffer_start, &scientific_exponent);
 		// 7.21.6.1/8: "Then, if a conversion with style E would have an
 		// exponent of X:
 		//   if P > X >= -4, the conversion is with style f and
 		//	 precision P - (X + 1).
 		//   otherwise, the conversion is with style e and precision P - 1."
-		const bool resolve_to_fixed_form
-			= (scientific_exponent >= -4
-				&& scientific_exponent < effective_precision);
+		bool resolve_to_fixed_form = (-4<= scientific_exponent && scientific_exponent < effective_precision);
 		if (resolve_to_fixed_form){
 			// Rather than invoking d2fixed_buffered_n to reformat the number
 			// for us from scratch, we can just rewrite the scientific form
@@ -734,13 +765,13 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 			fmt = chars_format::fixed;
 			if (scientific_exponent < 0){
 				// e.g. buffer_start == "-1.234e-04"
-				char* leading_digit = &buffer_start[sign];
+				char* leading_digit = &buffer_start[repr.negative];
 				leading_digit[1] = leading_digit[0];
 				// buffer_start == "-11234e-04"
 				buffer_start -= -scientific_exponent;
 				// buffer_start == "????-11234e-04"
 				char* head = buffer_start;
-				if (sign)*head++ = '-';
+				if (repr.negative)*head++ = '-';
 				*head++ = '0';
 				*head++ = '.';
 				memset(head, '0', -scientific_exponent - 1);
@@ -748,32 +779,32 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 
 				// Now drop the exponent suffix, and add the leading zeros to
 				// the output length.
-				output_length -= strlen("e-0d");
+				output_length -= "e-0d"_len;
 				output_length += -scientific_exponent;
 				if (effective_precision - 1 == 0)
 					// The scientific form had no decimal point, but the fixed
 					// form now does.
-					output_length += strlen(".");
+					output_length += "."_len;
 			}else if (effective_precision == 1){
 				// The scientific exponent must be 0, so the fixed form
 				// coincides with the scientific form (minus the exponent
 				// suffix).
-				output_length -= strlen("e+dd");
+				output_length -= "e+dd"_len;
 			}else{
 				// We are dealing with a scientific form which has a
 				// non-empty fractional part and a nonnegative exponent,
 				// e.g. buffer_start == "1.234e+02".
-				char* const decimal_point = &buffer_start[sign + 1];
+				char* decimal_point = &buffer_start[repr.negative + 1];
 				memmove(decimal_point, decimal_point+1,
 					scientific_exponent);
 				// buffer_start == "123.4e+02"
 				decimal_point[scientific_exponent] = '.';
 				if (scientific_exponent >= 100)
-					output_length -= strlen("e+ddd");
+					output_length -= "e+ddd"_len;
 				else
-					output_length -= strlen("e+dd");
+					output_length -= "e+dd"_len;
 				if (effective_precision - 1 == scientific_exponent)
-					output_length -= strlen(".");
+					output_length -= "."_len;
 			}
 			effective_precision -= 1 + scientific_exponent;
 
@@ -787,10 +818,10 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 		// character is removed if there is no fractional portion remaining."
 		if (effective_precision > 0){
 			char* decimal_point = nullptr;
-			if (fmt == chars_format::scientific)decimal_point = &buffer_start[sign + 1];
+			if (fmt == chars_format::scientific)decimal_point = &buffer_start[repr.negative + 1];
 			else if (fmt == chars_format::fixed)decimal_point
 			= &buffer_start[output_length] - effective_precision - 1;
-			char* const fractional_part_start = decimal_point + 1;
+			char* fractional_part_start = decimal_point + 1;
 			char* fractional_part_end = nullptr;
 			if (fmt == chars_format::scientific){
 				fractional_part_end = (buffer_start[output_length-5] == 'e'
@@ -798,11 +829,9 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 							: &buffer_start[output_length-4]);
 			}else if (fmt == chars_format::fixed)
 				fractional_part_end = &buffer_start[output_length];
-			const string_view fractional_part
-				= {fractional_part_start, (size_t)(fractional_part_end
-								- fractional_part_start) };
-			const size_t last_nonzero_digit_pos
-				= fractional_part.find_last_not_of('0');
+			string_view fractional_part
+				= {fractional_part_start, (size_t)(fractional_part_end - fractional_part_start) };
+			size_t last_nonzero_digit_pos = fractional_part.find_last_not_of('0');
 
 			char* trim_start;
 			if (last_nonzero_digit_pos == string_view::npos)trim_start = decimal_point;
@@ -812,7 +841,7 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 					&buffer_start[output_length] - fractional_part_end);
 			output_length -= fractional_part_end - trim_start;
 		}
-		if (last - first < output_length)
+		if (last-first < output_length)
 			return {last, std::errc::value_too_large};
 
 		memcpy(first, buffer_start, output_length);
@@ -820,20 +849,25 @@ to_chars_prec(char* first, char* const last, const T value,chars_format fmt, con
 	}
 	__builtin_unreachable();
 }
-
+#include <charconv>
 namespace backports{
-to_chars_result to_chars(char* first, char* last, float value, chars_format fmt) { return to_chars_short(first, last, value, fmt); }
-to_chars_result to_chars(char* first, char* last, float value, chars_format fmt,int precision){ return to_chars_prec(first, last, value, fmt, precision); }
-to_chars_result to_chars(char* first, char* last, double value, chars_format fmt){ return to_chars_short(first, last, value, fmt); }
-to_chars_result to_chars(char* first, char* last, double value, chars_format fmt,int precision){ return to_chars_prec(first, last, value, fmt, precision); }
-to_chars_result to_chars(char* first, char* last, long double value, chars_format fmt){return to_chars_short(first, last, value, fmt);}
+to_chars_result to_chars(char* first, char* last,       float value){return to_chars_plain(first, last, value);}
+to_chars_result to_chars(char* first, char* last,      double value){return to_chars_plain(first, last, value);}
+to_chars_result to_chars(char* first, char* last, long double value){return to_chars_plain(first, last, value);}
+to_chars_result to_chars(char* first, char* last,       float value, chars_format fmt){return to_chars_fmt(first, last, value, fmt);}
+to_chars_result to_chars(char* first, char* last,      double value, chars_format fmt){return to_chars_fmt(first, last, value, fmt);}
+to_chars_result to_chars(char* first, char* last, long double value, chars_format fmt){return to_chars_fmt(first, last, value, fmt);}
+to_chars_result to_chars(char* first, char* last,       float value, chars_format fmt,int precision){return to_chars_prec(first, last, value, fmt, precision);}
+to_chars_result to_chars(char* first, char* last,      double value, chars_format fmt,int precision){return to_chars_prec(first, last, value, fmt, precision);}
 to_chars_result to_chars(char* first, char* last, long double value, chars_format fmt,int precision){return to_chars_prec(first, last, value, fmt, precision);}
 #ifdef _GLIBCXX_LONG_DOUBLE_COMPAT
 // Map the -mlong-double-64 long double overloads to the double overloads.
 extern "C" to_chars_result
+_ZN9backports8to_charsEPcS0_d(char* first, char* last, double value,chars_format fmt)
+  __attribute__((alias ("_ZN9backports8to_charsEPcS0_e")));
+extern "C" to_chars_result
 _ZN9backports8to_charsEPcS0_dNS_12chars_formatE(char* first, char* last, double value,chars_format fmt)
   __attribute__((alias ("_ZN9backports8to_charsEPcS0_eNS_12chars_formatE")));
-
 extern "C" to_chars_result
 _ZN9backports8to_charsEPcS0_dNS_12chars_formatEi(char* first, char* last, double value,chars_format fmt, int precision)
   __attribute__((alias ("_ZN9backports8to_charsEPcS0_eNS_12chars_formatEi")));
