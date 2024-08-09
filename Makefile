@@ -16,7 +16,7 @@ HEADERS += include/detail/invoke_traits.hpp include/detail/special_members.hpp
 all: test.out backports.a
 clean:
 	rm test.out backports.a build/*
-MY_OBJECTS=optional from_chars to_chars_tables to_chars
+MY_OBJECTS=stdexcept from_chars to_chars_tables to_chars
 RYU_OBJECTS=generic_128 d2s d2s_full_table d2fixed f2s d2fixed_full_table
 backports.a: $(foreach obj,$(MY_OBJECTS) $(RYU_OBJECTS),build/$(obj).o)
 	ar rcu $@ $^
@@ -24,7 +24,7 @@ test.out: test.cpp $(foreach obj,$(MY_OBJECTS),src/$(obj).cpp) $(foreach obj,$(R
 	$(CXX) $(CFLAGS) -o $@ -Og -g test.cpp $(foreach obj,$(MY_OBJECTS),src/$(obj).cpp) $(foreach obj,$(RYU_OBJECTS),build/$(obj).o) -fsanitize=address -Wno-vla-extension -Wno-unused-function
 $(foreach obj,$(RYU_OBJECTS),build/$(obj).o): build/%.o: src/ryu/%.cpp $(HEADERS)
 	$(CXX) $(CFLAGS) -o $@ -Os -DNDEBUG -c $<
-build/optional.o: src/optional.cpp  $(HEADERS)
+build/stdexcept.o: src/stdexcept.cpp  $(HEADERS)
 	$(CXX) $(CFLAGS) -o $@ -Os -DNDEBUG -c $< -Weverything -Wno-c++98-compat-pedantic -Wc++14-compat-pedantic
 build/from_chars.o: src/from_chars.cpp  $(HEADERS)
 	$(CXX) $(CFLAGS) -o $@ -Os -DNDEBUG -c $< -Weverything -Wno-c++98-compat-pedantic -Wc++14-compat-pedantic -Wno-documentation-unknown-command -Wno-float-equal -Wno-padded -Wno-unsafe-buffer-usage -Wno-unused-template
