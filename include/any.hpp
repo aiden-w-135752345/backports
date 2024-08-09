@@ -140,7 +140,6 @@ namespace backports{
     };
     inline void swap(any& x, any& y) noexcept { x.swap(y); }
 
-
     template <typename T, typename... Args>inline
     std::enable_if_t<is_constructible_v<any, in_place_type_t<T>, Args...>, any>
     make_any(Args&&... args) { return any(in_place_type<T>, std::forward<Args>(args)...); }

@@ -46,58 +46,6 @@
 #include <cstdint>
 #include <limits>
 
-namespace fast_float {
-
-using backports::chars_format;
-using backports::from_chars_result;
-
-struct parse_options {
-  constexpr explicit parse_options(chars_format fmt = chars_format::general,
-                         char dot = '.')
-    : format(fmt), decimal_point(dot) {}
-
-  /** Which number formats are accepted */
-  chars_format format;
-  /** The character used as decimal point */
-  char decimal_point;
-};
-
-/**
- * This function parses the character sequence [first,last) for a number. It parses floating-point numbers expecting
- * a locale-indepent format equivalent to what is used by std::strtod in the default ("C") locale.
- * The resulting floating-point value is the closest floating-point values (using either float or double),
- * using the "round to even" convention for values that would otherwise fall right in-between two values.
- * That is, we provide exact parsing according to the IEEE standard.
- *
- * Given a successful parse, the pointer (`ptr`) in the returned value is set to point right after the
- * parsed number, and the `value` referenced is set to the parsed value. In case of error, the returned
- * `ec` contains a representative error, otherwise the default (`std::errc()`) value is stored.
- *
- * The implementation does not throw and does not allocate memory (e.g., with `new` or `malloc`).
- *
- * Like the C++17 standard, the `fast_float::from_chars` functions take an optional last argument of
- * the type `fast_float::chars_format`. It is a bitset value: we check whether
- * `fmt & fast_float::chars_format::fixed` and `fmt & fast_float::chars_format::scientific` are set
- * to determine whether we allow the fixed point and scientific notation respectively.
- * The default is  `fast_float::chars_format::general` which allows both `fixed` and `scientific`.
- */
-template<typename T>
-from_chars_result from_chars(const char *first, const char *last,
-                             T &value, chars_format fmt = chars_format::general)  noexcept;
-
-/**
- * Like from_chars, but accepts an `options` argument to govern number parsing.
- */
-template<typename T>
-from_chars_result from_chars_advanced(const char *first, const char *last,
-                                      T &value, parse_options options)  noexcept;
-
-}
-#endif // FASTFLOAT_FAST_FLOAT_H
-
-#ifndef FASTFLOAT_FLOAT_COMMON_H
-#define FASTFLOAT_FLOAT_COMMON_H
-
 #if (defined(__x86_64) || defined(__x86_64__) || defined(_M_X64)   \
        || defined(__amd64) || defined(__aarch64__) || defined(_M_ARM64) \
        || defined(__MINGW64__)                                          \
@@ -168,7 +116,7 @@ from_chars_result from_chars_advanced(const char *first, const char *last,
 #endif
 
 #ifndef FASTFLOAT_ASSERT
-#define FASTFLOAT_ASSERT(x)  { if (!(x)) abort(); }
+#define FASTFLOAT_ASSERT(x)  do{ if (!(x)) abort(); }while(0)
 #endif
 
 #ifndef FASTFLOAT_DEBUG_ASSERT
@@ -177,10 +125,55 @@ from_chars_result from_chars_advanced(const char *first, const char *last,
 #endif
 
 // rust style `try!()` macro, or `?` operator
-#define FASTFLOAT_TRY(x) { if (!(x)) return false; }
+#define FASTFLOAT_TRY(x) do{ if (!(x)) return false; }while(0)
 
 namespace fast_float {
 
+using backports::chars_format;
+using backports::from_chars_result;
+
+struct parse_options {
+  constexpr explicit parse_options(chars_format fmt = chars_format::general,
+                         char dot = '.')
+    : format(fmt), decimal_point(dot) {}
+
+  /** Which number formats are accepted */
+  chars_format format;
+  /** The character used as decimal point */
+  char decimal_point;
+};
+
+/**
+ * This function parses the character sequence [first,last) for a number. It parses floating-point numbers expecting
+ * a locale-indepent format equivalent to what is used by std::strtod in the default ("C") locale.
+ * The resulting floating-point value is the closest floating-point values (using either float or double),
+ * using the "round to even" convention for values that would otherwise fall right in-between two values.
+ * That is, we provide exact parsing according to the IEEE standard.
+ *
+ * Given a successful parse, the pointer (`ptr`) in the returned value is set to point right after the
+ * parsed number, and the `value` referenced is set to the parsed value. In case of error, the returned
+ * `ec` contains a representative error, otherwise the default (`std::errc()`) value is stored.
+ *
+ * The implementation does not throw and does not allocate memory (e.g., with `new` or `malloc`).
+ *
+ * Like the C++17 standard, the `fast_float::from_chars` functions take an optional last argument of
+ * the type `fast_float::chars_format`. It is a bitset value: we check whether
+ * `fmt & fast_float::chars_format::fixed` and `fmt & fast_float::chars_format::scientific` are set
+ * to determine whether we allow the fixed point and scientific notation respectively.
+ * The default is  `fast_float::chars_format::general` which allows both `fixed` and `scientific`.
+ */
+template<typename T>
+from_chars_result from_chars(const char *first, const char *last,
+                             T &value, chars_format fmt = chars_format::general)  noexcept;
+
+/**
+ * Like from_chars, but accepts an `options` argument to govern number parsing.
+ */
+template<typename T>
+from_chars_result from_chars_advanced(const char *first, const char *last,
+                                      T &value, parse_options options)  noexcept;
+
+__extension__ using uint128_t = unsigned __int128;
 // Compares two ASCII strings in a case insensitive manner.
 inline bool fastfloat_strncasecmp(const char *input1, const char *input2,
                                   size_t length) {
@@ -282,7 +275,7 @@ fastfloat_really_inline value128 full_multiplication(uint64_t a,
 #elif defined(FASTFLOAT_32BIT) || (defined(_WIN64) && !defined(__clang__))
   answer.low = _umul128(a, b, &answer.high); // _umul128 not available on ARM64
 #elif defined(FASTFLOAT_64BIT)
-  __uint128_t r = ((__uint128_t)a) * b;
+  uint128_t r = uint128_t(a) * b;
   answer.low = uint64_t(r);
   answer.high = uint64_t(r >> 64);
 #else
@@ -540,16 +533,6 @@ fastfloat_really_inline void to_float(bool negative, adjusted_mantissa am, T &va
 #endif
 }
 
-} // namespace fast_float
-
-#endif
-
-#ifndef FASTFLOAT_ASCII_NUMBER_H
-#define FASTFLOAT_ASCII_NUMBER_H
-
-
-namespace fast_float {
-
 // Next function can be micro-optimized, but compilers are entirely
 // able to optimize it well.
 fastfloat_really_inline bool is_integer(char c)  noexcept  { return c >= '0' && c <= '9'; }
@@ -761,15 +744,6 @@ parsed_number_string parse_number_string(const char *p, const char *pend, parse_
   answer.mantissa = i;
   return answer;
 }
-
-} // namespace fast_float
-
-#endif
-
-#ifndef FASTFLOAT_FAST_TABLE_H
-#define FASTFLOAT_FAST_TABLE_H
-
-namespace fast_float {
 
 /**
  * When mapping numbers from decimal to binary,
@@ -1460,15 +1434,6 @@ const uint64_t powers_template<unused>::power_of_five_128[number_of_entries] = {
         0x8e679c2f5e44ff8f,0x570f09eaa7ea7648,};
 using powers = powers_template<>;
 
-}
-
-#endif
-
-#ifndef FASTFLOAT_DECIMAL_TO_BINARY_H
-#define FASTFLOAT_DECIMAL_TO_BINARY_H
-
-namespace fast_float {
-
 // This will compute or rather approximate w * 5**q and return a pair of 64-bit words approximating
 // the result, with the "high" part corresponding to the most significant bits and the
 // low part corresponding to the least significant bits.
@@ -1646,16 +1611,6 @@ adjusted_mantissa compute_float(int64_t q, uint64_t w)  noexcept  {
   return answer;
 }
 
-} // namespace fast_float
-
-#endif
-
-#ifndef FASTFLOAT_BIGINT_H
-#define FASTFLOAT_BIGINT_H
-
-
-namespace fast_float {
-
 // the limb width: we want efficient multiplication of double the bits in
 // limb, or for 64-bit limbs, at least 64-bit multiplication where we can
 // extract the high and low parts efficiently. this is every 64-bit
@@ -1745,7 +1700,7 @@ struct stackvec {
   // add items to the vector, from a span, without bounds checking
   void extend_unchecked(limb_span s) noexcept {
     limb* ptr = data + length;
-    ::memcpy((void*)ptr, (const void*)s.ptr, sizeof(limb) * s.len());
+    ::memcpy(static_cast<void*>(ptr), static_cast<const void*>(s.ptr), sizeof(limb) * s.len());
     set_len(len() + s.len());
   }
   // try to add items to the vector, returning if items were added
@@ -2231,238 +2186,6 @@ struct bigint {
   }
 };
 
-} // namespace fast_float
-
-#endif
-
-#ifndef FASTFLOAT_ASCII_NUMBER_H
-#define FASTFLOAT_ASCII_NUMBER_H
-
-
-namespace fast_float {
-
-// Next function can be micro-optimized, but compilers are entirely
-// able to optimize it well.
-fastfloat_really_inline bool is_integer(char c)  noexcept  { return c >= '0' && c <= '9'; }
-
-fastfloat_really_inline uint64_t byteswap(uint64_t val) {
-  return (val & 0xFF00000000000000) >> 56
-    | (val & 0x00FF000000000000) >> 40
-    | (val & 0x0000FF0000000000) >> 24
-    | (val & 0x000000FF00000000) >> 8
-    | (val & 0x00000000FF000000) << 8
-    | (val & 0x0000000000FF0000) << 24
-    | (val & 0x000000000000FF00) << 40
-    | (val & 0x00000000000000FF) << 56;
-}
-
-fastfloat_really_inline uint64_t read_u64(const char *chars) {
-  uint64_t val;
-  ::memcpy(&val, chars, sizeof(uint64_t));
-#if FASTFLOAT_IS_BIG_ENDIAN == 1
-  // Need to read as-if the number was in little-endian order.
-  val = byteswap(val);
-#endif
-  return val;
-}
-
-fastfloat_really_inline void write_u64(uint8_t *chars, uint64_t val) {
-#if FASTFLOAT_IS_BIG_ENDIAN == 1
-  // Need to read as-if the number was in little-endian order.
-  val = byteswap(val);
-#endif
-  ::memcpy(chars, &val, sizeof(uint64_t));
-}
-
-// credit  @aqrit
-fastfloat_really_inline uint32_t  parse_eight_digits_unrolled(uint64_t val) {
-  const uint64_t mask = 0x000000FF000000FF;
-  const uint64_t mul1 = 0x000F424000000064; // 100 + (1000000ULL << 32)
-  const uint64_t mul2 = 0x0000271000000001; // 1 + (10000ULL << 32)
-  val -= 0x3030303030303030;
-  val = (val * 10) + (val >> 8); // val = (val * 2561) >> 8;
-  val = (((val & mask) * mul1) + (((val >> 16) & mask) * mul2)) >> 32;
-  return uint32_t(val);
-}
-
-fastfloat_really_inline uint32_t parse_eight_digits_unrolled(const char *chars)  noexcept  {
-  return parse_eight_digits_unrolled(read_u64(chars));
-}
-
-// credit @aqrit
-fastfloat_really_inline bool is_made_of_eight_digits_fast(uint64_t val)  noexcept  {
-  return !((((val + 0x4646464646464646) | (val - 0x3030303030303030)) &
-     0x8080808080808080));
-}
-
-fastfloat_really_inline bool is_made_of_eight_digits_fast(const char *chars)  noexcept  {
-  return is_made_of_eight_digits_fast(read_u64(chars));
-}
-
-typedef span<const char> byte_span;
-
-struct parsed_number_string {
-  int64_t exponent{0};
-  uint64_t mantissa{0};
-  const char *lastmatch{nullptr};
-  bool negative{false};
-  bool valid{false};
-  bool too_many_digits{false};
-  // contains the range of the significant digits
-  byte_span integer{};  // non-nullable
-  byte_span fraction{}; // nullable
-};
-
-// Assuming that you use no more than 19 digits, this will
-// parse an ASCII string.
-fastfloat_really_inline
-parsed_number_string parse_number_string(const char *p, const char *pend, parse_options options) noexcept {
-  const chars_format fmt = options.format;
-  const char decimal_point = options.decimal_point;
-
-  parsed_number_string answer;
-  answer.valid = false;
-  answer.too_many_digits = false;
-  answer.negative = (*p == '-');
-  if (*p == '-') { // C++17 20.19.3.(7.1) explicitly forbids '+' sign here
-    ++p;
-    if (p == pend) {
-      return answer;
-    }
-    if (!is_integer(*p) && (*p != decimal_point)) { // a sign must be followed by an integer or the dot
-      return answer;
-    }
-  }
-  const char *const start_digits = p;
-
-  uint64_t i = 0; // an unsigned int avoids signed overflows (which are bad)
-
-  while ((p != pend) && is_integer(*p)) {
-    // a multiplication by 10 is cheaper than an arbitrary integer
-    // multiplication
-    i = 10 * i +
-        uint64_t(*p - '0'); // might overflow, we will handle the overflow later
-    ++p;
-  }
-  const char *const end_of_integer_part = p;
-  int64_t digit_count = int64_t(end_of_integer_part - start_digits);
-  answer.integer = byte_span(start_digits, size_t(digit_count));
-  int64_t exponent = 0;
-  if ((p != pend) && (*p == decimal_point)) {
-    ++p;
-    const char* before = p;
-    // can occur at most twice without overflowing, but let it occur more, since
-    // for integers with many digits, digit parsing is the primary bottleneck.
-    while ((std::distance(p, pend) >= 8) && is_made_of_eight_digits_fast(p)) {
-      i = i * 100000000 + parse_eight_digits_unrolled(p); // in rare cases, this will overflow, but that's ok
-      p += 8;
-    }
-    while ((p != pend) && is_integer(*p)) {
-      uint8_t digit = uint8_t(*p - '0');
-      ++p;
-      i = i * 10 + digit; // in rare cases, this will overflow, but that's ok
-    }
-    exponent = before - p;
-    answer.fraction = byte_span(before, size_t(p - before));
-    digit_count -= exponent;
-  }
-  // we must have encountered at least one integer!
-  if (digit_count == 0) {
-    return answer;
-  }
-  int64_t exp_number = 0;            // explicit exponential part
-  if ((fmt & chars_format::scientific) && (p != pend) && (('e' == *p) || ('E' == *p))) {
-    const char * location_of_e = p;
-    ++p;
-    bool neg_exp = false;
-    if ((p != pend) && ('-' == *p)) {
-      neg_exp = true;
-      ++p;
-    } else if ((p != pend) && ('+' == *p)) { // '+' on exponent is allowed by C++17 20.19.3.(7.1)
-      ++p;
-    }
-    if ((p == pend) || !is_integer(*p)) {
-      if(!(fmt & chars_format::fixed)) {
-        // We are in error.
-        return answer;
-      }
-      // Otherwise, we will be ignoring the 'e'.
-      p = location_of_e;
-    } else {
-      while ((p != pend) && is_integer(*p)) {
-        uint8_t digit = uint8_t(*p - '0');
-        if (exp_number < 0x10000000) {
-          exp_number = 10 * exp_number + digit;
-        }
-        ++p;
-      }
-      if(neg_exp) { exp_number = - exp_number; }
-      exponent += exp_number;
-    }
-  } else {
-    // If it scientific and not fixed, we have to bail out.
-    if((fmt & chars_format::scientific) && !(fmt & chars_format::fixed)) { return answer; }
-  }
-  answer.lastmatch = p;
-  answer.valid = true;
-
-  // If we frequently had to deal with long strings of digits,
-  // we could extend our code by using a 128-bit integer instead
-  // of a 64-bit integer. However, this is uncommon.
-  //
-  // We can deal with up to 19 digits.
-  if (digit_count > 19) { // this is uncommon
-    // It is possible that the integer had an overflow.
-    // We have to handle the case where we have 0.0000somenumber.
-    // We need to be mindful of the case where we only have zeroes...
-    // E.g., 0.000000000...000.
-    const char *start = start_digits;
-    while ((start != pend) && (*start == '0' || *start == decimal_point)) {
-      if(*start == '0') { digit_count --; }
-      start++;
-    }
-    if (digit_count > 19) {
-      answer.too_many_digits = true;
-      // Let us start again, this time, avoiding overflows.
-      // We don't need to check if is_integer, since we use the
-      // pre-tokenized spans from above.
-      i = 0;
-      p = answer.integer.ptr;
-      const char* int_end = p + answer.integer.len();
-      const uint64_t minimal_nineteen_digit_integer{1000000000000000000};
-      while((i < minimal_nineteen_digit_integer) && (p != int_end)) {
-        i = i * 10 + uint64_t(*p - '0');
-        ++p;
-      }
-      if (i >= minimal_nineteen_digit_integer) { // We have a big integers
-        exponent = end_of_integer_part - p + exp_number;
-      } else { // We have a value with a fractional component.
-          p = answer.fraction.ptr;
-          const char* frac_end = p + answer.fraction.len();
-          while((i < minimal_nineteen_digit_integer) && (p != frac_end)) {
-            i = i * 10 + uint64_t(*p - '0');
-            ++p;
-          }
-          exponent = answer.fraction.ptr - p + exp_number;
-      }
-      // We have now corrected both exponent and i, to a truncated value
-    }
-  }
-  answer.exponent = exponent;
-  answer.mantissa = i;
-  return answer;
-}
-
-} // namespace fast_float
-
-#endif
-
-#ifndef FASTFLOAT_DIGIT_COMPARISON_H
-#define FASTFLOAT_DIGIT_COMPARISON_H
-
-
-namespace fast_float {
-
 // 1e0 to 1e19
 constexpr static uint64_t powers_of_ten_uint64[] = {
     1UL, 10UL, 100UL, 1000UL, 10000UL, 100000UL, 1000000UL, 10000000UL, 100000000UL,
@@ -2805,9 +2528,7 @@ inline adjusted_mantissa negative_digit_comp(bigint& bigmant, adjusted_mantissa 
   int ord = real_digits.compare(theor_digits);
   adjusted_mantissa answer = am;
   round<T>(answer, [ord](adjusted_mantissa& a, int32_t shift) {
-    round_nearest_tie_even(a, shift, [ord](bool is_odd, bool _, bool __) -> bool {
-      (void)_;  // not needed, since we've done our comparison
-      (void)__; // not needed, since we've done our comparison
+    round_nearest_tie_even(a, shift, [ord](bool is_odd, bool, bool) -> bool {
       if (ord > 0) {
         return true;
       } else if (ord < 0) {
@@ -2852,17 +2573,6 @@ inline adjusted_mantissa digit_comp(parsed_number_string& num, adjusted_mantissa
     return negative_digit_comp<T>(bigmant, am, exponent);
   }
 }
-
-} // namespace fast_float
-
-#endif
-
-#ifndef FASTFLOAT_PARSE_NUMBER_H
-#define FASTFLOAT_PARSE_NUMBER_H
-
-
-namespace fast_float {
-
 
 namespace detail {
 /**
@@ -3044,5 +2754,4 @@ from_chars_result from_chars_advanced(const char *first, const char *last,
 
 } // namespace fast_float
 
-#endif
-
+#endif // FASTFLOAT_FAST_FLOAT_H

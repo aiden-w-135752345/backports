@@ -22,7 +22,7 @@
 namespace ryu{
   __extension__ using uint128_t = unsigned __int128;
   uint32_t decimalLength(const uint128_t v) {
-    static uint128_t LARGEST_POW10 = (((uint128_t) 5421010862427522170ull) << 64) | 687399551400673280ull;
+    constexpr static uint128_t LARGEST_POW10 = uint128_t(10000000000000000000u)*10000000000000000000u;
     uint128_t p10 = LARGEST_POW10;
     for (uint32_t i = 39; i > 0; i--) {
       if (v >= p10) {

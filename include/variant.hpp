@@ -1,7 +1,7 @@
 #ifndef VARIANT_HPP
 #define VARIANT_HPP
-#include "../src/special_members.hpp"
-#include "../src/inline_variables.hpp"
+#include "detail/special_members.hpp"
+#include "detail/inline_variables.hpp"
 #include "utility.hpp"
 #include "functional.hpp"
 #include <type_traits>

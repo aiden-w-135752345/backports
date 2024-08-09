@@ -1,7 +1,6 @@
 #ifndef TYPE_TRAITS_HPP
 #define TYPE_TRAITS_HPP
-
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 #include <type_traits>
 #include <utility>
 namespace backports{
@@ -73,24 +72,20 @@ namespace backports{
     template< class T >constexpr INLINE const bool is_trivially_destructible_v = std::is_trivially_destructible<T>::value;
     template< class T >constexpr INLINE const bool is_nothrow_destructible_v = std::is_nothrow_destructible<T>::value;
     template< class T >constexpr INLINE const bool has_virtual_destructor_v = std::has_virtual_destructor<T>::value;
-    namespace _swap {
+    namespace _type_traits {
         using std::swap;
-        template<class T,class = decltype(swap(std::declval<T&>(), std::declval<T&>()))>static std::true_type swappable(int);
-        template<class>static std::false_type swappable(...);
-        template<class T>static bool_constant<noexcept(swap(std::declval<T&>(), std::declval<T&>()))>nothrow_swappable(int);
-        template<class>static std::false_type nothrow_swappable(...);
         template<class T,class U,class = decltype(swap(std::declval<T>(), std::declval<U>())),
-            class = decltype(swap(std::declval<U>(), std::declval<T>()))>static std::true_type swappable_with(int);
-        template<class, class>static std::false_type swappable_with(...);
-        template<class T, class U>static bool_constant<
+            class = decltype(swap(std::declval<U>(), std::declval<T>()))>std::true_type swappable(int);
+        template<class, class>std::false_type swappable(...);
+        template<class T, class U>bool_constant<
             noexcept(swap(std::declval<T>(), std::declval<U>()))&&noexcept(swap(std::declval<U>(), std::declval<T>()))
-                >nothrow_swappable_with(int);
-        template<class, class>static std::false_type nothrow_swappable_with(...);
-    }// namespace _swap
-    template<class T>struct is_swappable: public decltype(_swap::swappable<T>(0)){};
-    template<class T>struct is_nothrow_swappable: public decltype(_swap::nothrow_swappable<T>(0)){};
-    template<class T, class U>struct is_swappable_with: public decltype(_swap::swappable_with<T, U>(0)){};
-    template<class T, class U>struct is_nothrow_swappable_with: public decltype(_swap::nothrow_swappable_with<T, U>(0)){};
+                >nothrow_swappable(int);
+        template<class, class>std::false_type nothrow_swappable(...);
+    }// namespace _type_traits
+    template<class T>struct is_swappable: public decltype(_type_traits::swappable<T&,T&>(0)){};
+    template<class T>struct is_nothrow_swappable: public decltype(_type_traits::nothrow_swappable<T&,T&>(0)){};
+    template<class T, class U>struct is_swappable_with: public decltype(_type_traits::swappable<T, U>(0)){};
+    template<class T, class U>struct is_nothrow_swappable_with: public decltype(_type_traits::nothrow_swappable<T, U>(0)){};
     template<class T>constexpr INLINE const bool is_swappable_v = is_swappable<T>::value;
     template<class T>constexpr INLINE const bool is_nothrow_swappable_v = is_nothrow_swappable<T>::value;
     template<class T, class U>constexpr INLINE const bool is_swappable_with_v = is_swappable_with<T, U>::value;
@@ -115,5 +110,5 @@ namespace backports{
 }//namespace backports
 #endif //TYPE_TRAITS_HPP
 #ifndef NO_INVOKE_TRAITS
-#include "../src/invoke_traits.hpp"
+#include "detail/invoke_traits.hpp"
 #endif

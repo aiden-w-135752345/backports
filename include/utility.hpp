@@ -1,6 +1,6 @@
 #ifndef UTILITY_HPP
 #define UTILITY_HPP
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 #include <utility>
 namespace backports{
     template<class T>constexpr const T& as_const(T& t) noexcept{return t;}

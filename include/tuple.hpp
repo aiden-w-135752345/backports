@@ -1,7 +1,7 @@
 #ifndef TUPLE_HPP
 #define TUPLE_HPP
 #include "functional.hpp"
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 #include <tuple>
 namespace backports{
     template<class T>constexpr INLINE const size_t tuple_size_v = std::tuple_size<T>::value;

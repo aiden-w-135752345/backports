@@ -1,7 +1,7 @@
 #ifndef CHRONO_HPP
 #define CHRONO_HPP
 #include <chrono>
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 namespace backports{namespace chrono{
     template <typename _Rep>constexpr INLINE const bool treat_as_floating_point_v
         =std::chrono::treat_as_floating_point<_Rep>::value;

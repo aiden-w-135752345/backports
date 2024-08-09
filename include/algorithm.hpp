@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include "execution.hpp"
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 namespace backports{
     namespace _algo{
         template <class T>using iterator_cat_t = typename std::iterator_traits<T>::iterator_category;

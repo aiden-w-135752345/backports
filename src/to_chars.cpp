@@ -14,8 +14,6 @@
 #include <langinfo.h> // for nl_langinfo
 #endif
 #include <type_traits>
-#include <iostream>
-#include <iomanip>
 #include <cstdint>
 using namespace backports;
 template<class T>struct ieee_t{
@@ -26,13 +24,10 @@ template<class T>struct ieee_t{
 // Decompose the floating-point value into its IEEE components.
 template<class T>ieee_t<T>get_ieee_repr(T value){
 	constexpr int mantissa_bits = floating_type_traits<T>::mantissa_bits;
-	// frexp(T, int* exp );
-	//std::cout<<"value:  "<<std::hexfloat<<value<<'\n';
-	ieee_t<T> ieee_repr;
-	T mantissaFloat=std::scalbn(std::frexp(value,&ieee_repr.exponent),mantissa_bits+1);
-	ieee_repr.mantissa=mantissaFloat;
-
-	return ieee_repr;
+	using mantissa_t=typename floating_type_traits<T>::mantissa_t;
+	int32_t exponent;
+	T mantissa=std::abs(std::ldexp(std::frexp(value,&exponent),mantissa_bits+1));
+	return ieee_t<T>{static_cast<mantissa_t>(mantissa),exponent,std::signbit(value)};
 }
 
 namespace ryu{
@@ -52,87 +47,130 @@ namespace ryu{
 
 	// Invoke Ryu to obtain the shortest scientific form for the given
 	// floating-point number.
-	floating_decimal_128 floating_to_fd(long double value){
+	static floating_decimal_128 floating_to_fd(long double value){
 		ieee_t<long double>repr=get_ieee_repr(value);
 		using Traits=floating_type_traits<long double>;
 		return ryu::generic_binary_to_decimal(
-			repr.mantissa,repr.exponent+(1u<<(Traits::exponent_bits-1))-2,
+			repr.mantissa,uint32_t(repr.exponent+(int32_t(1)<<(Traits::exponent_bits-1))-2),
 			repr.negative,Traits::mantissa_bits,Traits::exponent_bits,0);
 	}
 
 } // namespace ryu
-template<unsigned char base,class T>static backports::to_chars_result to_chars_small(char* beg, char* end, T val){
-	using U = std::conditional_t<sizeof(T)<sizeof(uint32_t),uint32_t,std::conditional_t<sizeof(T)<sizeof(uint64_t),uint64_t,uint128_t>>;
-	U uval = val;
-	// std::errc::argument_out_of_domain
-	if(beg == end) return { end, std::errc::value_too_large };
-	if(val == 0){*beg = '0';return { beg + 1, std::errc{} };}
-	if(val < 0){*beg++ = '-';uval=U(~val)+1;}
-	U lval=uval;
-	unsigned char len=1;while(lval>base){lval/=base;len++;}
+template<class T>constexpr static std::pair<T,short>calc_max_pow10(){
+    short digits=1;
+	T max=1,threshold=std::numeric_limits<T>::max()/10;
+	while(max<=threshold){max*=10;++digits;}
+	return {max,digits};
+}
+template<class T>constexpr static std::pair<T,short>max_pow10=calc_max_pow10<T>();
+template<class T>static short width_10(T value){
+    T p10 = max_pow10<T>.first;
+    for (short i = max_pow10<T>.second; i > 0; i--) {
+      if (value >= p10) {return i;}
+      p10 /= 10;
+    }
+    return 1;
+}
+template<class T>static backports::to_chars_result to_chars_10(char* beg, char* end, T val){
+	constexpr T maxT=std::numeric_limits<T>::max();
+	using U = std::conditional_t<maxT<=static_cast<unsigned int>(-1),unsigned int,
+		std::conditional_t<maxT<=static_cast<unsigned long>(-1),unsigned long,
+		std::conditional_t<maxT<=static_cast<unsigned long long>(-1),unsigned long long,uint128_t>>>;
+	
+	U uval = U(val);
+	if(val < 0){++beg;uval=-uval;}
+	short len=width_10(uval);
 	if ((end - beg) < len){return {end,std::errc::value_too_large};}
 	end=beg+len;
-	while(len){beg[--len]='0'+(uval%base);uval/=base;}
+	while(len){beg[--len]='0'+(uval%10);uval/=10;}
+	if(val < 0){beg[-1]='-';}
 	return {end,{}};
 }
-template<class T>static backports::to_chars_result to_chars_16(char* beg, char* end, T val){
-	using U = std::conditional_t<sizeof(T)<sizeof(uint32_t),uint32_t,std::conditional_t<sizeof(T)<sizeof(uint64_t),uint64_t,uint128_t>>;
-	U uval = val;
-	if(beg == end) return { end, std::errc::value_too_large };
-	if(val == 0){*beg = '0';return { beg + 1, std::errc{} };}
-	if(val < 0){*beg++ = '-';uval=U(~val)+1;}
-	U lval=uval;
-	unsigned char len=1;while(lval>16){lval/=16;len++;}
+template<class T>static int count_trailing_zero(T value){
+	// if(!value)UB;
+	int c=0;
+	value&=-value;
+	for(int i=std::numeric_limits<T>::digits/2;i;i>>=1){if(value&~((~T(0))/((T(1)<<i)+1))){c+=i;}}
+	return c;
+}
+#if __has_builtin(__builtin_ctz)
+static int count_trailing_zero(unsigned char value){return __builtin_ctz(value);}
+static int count_trailing_zero(unsigned short value){return __builtin_ctz(value);}
+static int count_trailing_zero(unsigned int value){return __builtin_ctz(value);}
+#endif
+#if __has_builtin(__builtin_ctzl)
+static int count_trailing_zero(unsigned long value){return __builtin_ctzl(value);}
+#endif
+#if __has_builtin(__builtin_ctzll)
+static int count_trailing_zero(unsigned long long value){return __builtin_ctzll(value);}
+static int count_trailing_zero(uint128_t value){
+	unsigned long long low = value & static_cast<unsigned long long>(-1);
+	if (low != 0)return count_trailing_zero(low);
+	constexpr auto N = std::numeric_limits<unsigned long long>::digits;
+	unsigned long long high = value >> N;
+	return count_trailing_zero(high) + N;
+}
+#endif
+template<class T>static int bit_width(T value){
+    int r=0;
+    for(int s=std::numeric_limits<T>::digits/2;s;s>>=1){if(value&((~T(0))<<(s-1))){value>>=s;r+=s;}}
+    return r;
+}
+#if __has_builtin(__builtin_clz)
+static int bit_width(unsigned char value){return std::numeric_limits<unsigned int>::digits-__builtin_clz(value);}
+static int bit_width(unsigned short value){return std::numeric_limits<unsigned int>::digits-__builtin_clz(value);}
+static int bit_width(unsigned int value){return std::numeric_limits<unsigned int>::digits-__builtin_clz(value);}
+#endif
+#if __has_builtin(__builtin_clzl)
+static int bit_width(unsigned long value){return std::numeric_limits<unsigned long>::digits-__builtin_clzl(value);}
+#endif
+#if __has_builtin(__builtin_clzll)
+static int bit_width(unsigned long long value){return std::numeric_limits<unsigned long long>::digits-__builtin_clzll(value);}
+static int bit_width(uint128_t value){
+        constexpr auto N = std::numeric_limits<unsigned long long>::digits;
+		unsigned long long high = value >> N;
+		if (high != 0){return N+bit_width(high);}
+		unsigned long long low = value & static_cast<unsigned long long>(-1);
+		return bit_width(low);
+}
+#endif
+constexpr static char digits[]="0123456789abcdefghijklmnopqrstuvwxyz";
+template<unsigned char bits,class T>static backports::to_chars_result to_chars_bin(char* beg, char* end, T val){
+	unsigned char len=static_cast<unsigned char>((bit_width(val|1)+bits-1)/bits);
 	if ((end - beg) < len){return {end,std::errc::value_too_large};}
-	constexpr char digits[]="0123456789abcdef";
 	end=beg+len;
-	while(len){beg[--len]=digits[uval%16];uval/=16;}
+	while(len){beg[--len]=digits[val&((1<<bits)-1)];val>>=bits;}
 	return {end,{}};
 }
-template<class T>static backports::to_chars_result to_chars_32(char* beg, char* end, T val){
-	using U = std::conditional_t<sizeof(T)<sizeof(uint32_t),uint32_t,std::conditional_t<sizeof(T)<sizeof(uint64_t),uint64_t,uint128_t>>;
-	U uval = val;
+template<class T>static backports::to_chars_result to_chars(char* beg, char* end, T val, int base){
+	if(base<2||base>36){return {end,std::errc::value_too_large};}
+	unsigned char checked_base=static_cast<unsigned char>(base);
+	if(checked_base==10){return to_chars_10(beg,end,val);}
+	constexpr T maxT=std::numeric_limits<T>::max();
+	using U = std::conditional_t<maxT<=static_cast<unsigned int>(-1),unsigned int,
+		std::conditional_t<maxT<=static_cast<unsigned long>(-1),unsigned long,
+		std::conditional_t<maxT<=static_cast<unsigned long long>(-1),unsigned long long,uint128_t>>>;
 	if(beg == end) return { end, std::errc::value_too_large };
-	if(val == 0){*beg = '0';return { beg + 1, std::errc{} };}
-	if(val < 0){*beg++ = '-';uval=U(~val)+1;}
-	U lval=uval;
-	unsigned char len=1;while(lval>32){lval/=32;len++;}
-	if ((end - beg) < len){return {end,std::errc::value_too_large};}
-	constexpr char digits[]="0123456789abcdefghijklmnopqrstuv";
-	end=beg+len;
-	while(len){beg[--len]=digits[uval%32];uval/=32;}
-	return {end,{}};
-}
-template<class T>static backports::to_chars_result to_chars(char* beg, char* end, T val, unsigned char base){
-	switch(base){
-		case 2:return to_chars_small<2>(beg,end,val);case 3:return to_chars_small<3>(beg,end,val);
-		case 4:return to_chars_small<4>(beg,end,val);case 5:return to_chars_small<5>(beg,end,val);
-		case 6:return to_chars_small<6>(beg,end,val);case 7:return to_chars_small<7>(beg,end,val);
-		case 8:return to_chars_small<8>(beg,end,val);case 9:return to_chars_small<9>(beg,end,val);
-		case 10:return to_chars_small<10>(beg,end,val);
-		case 16:return to_chars_16(beg,end,val);
-		case 32:return to_chars_32(beg,end,val);
+	U uval = U(val);
+	if(val < 0){*beg++ = '-';uval=-uval;}
+	switch(checked_base){
+		case 2:return to_chars_bin<1>(beg,end,uval);case 4:return to_chars_bin<2>(beg,end,uval);
+		case 8:return to_chars_bin<3>(beg,end,uval);
+		case 16:return to_chars_bin<4>(beg,end,uval);case 32:return to_chars_bin<5>(beg,end,uval);
 		default:break;
 	}
-	using U = std::conditional_t<sizeof(T)<sizeof(uint32_t),uint32_t,std::conditional_t<sizeof(T)<sizeof(uint64_t),uint64_t,uint128_t>>;
-	U uval = val;
-	if(beg == end) return { end, std::errc::value_too_large };
-	if(val == 0){*beg = '0';return { beg + 1, std::errc{} };}
-	if(val < 0){*beg++ = '-';uval=U(~val)+1;}
-	U lval=uval;
-	unsigned char len=1;while(lval>base){lval/=base;len++;}
+	unsigned char len=1;for(U lval=uval;lval>=checked_base;lval/=checked_base){len++;}
 	if ((end - beg) < len){return {end,std::errc::value_too_large};}
-	constexpr char digits[]="0123456789abcdefghijklmnopqrstuvwxyz";
 	end=beg+len;
-	while(len){beg[--len]=digits[uval%base];uval/=base;}
+	while(len){beg[--len]=digits[uval%checked_base];uval/=checked_base;}
 	return {end,{}};
 }
 namespace backports{
-	to_chars_result to_chars(char*beg,char*end,         char      val,int base){return ::to_chars(beg,end,val,base);}
-	to_chars_result to_chars(char*beg,char*end,  signed char      val,int base){return ::to_chars(beg,end,val,base);}
-	to_chars_result to_chars(char*beg,char*end,unsigned char      val,int base){return ::to_chars(beg,end,val,base);}
-	to_chars_result to_chars(char*beg,char*end,  signed short     val,int base){return ::to_chars(beg,end,val,base);}
-	to_chars_result to_chars(char*beg,char*end,unsigned short     val,int base){return ::to_chars(beg,end,val,base);}
+	to_chars_result to_chars(char*beg,char*end,         char      val,int base){return ::to_chars(beg,end,+val,base);}
+	to_chars_result to_chars(char*beg,char*end,  signed char      val,int base){return ::to_chars(beg,end,+val,base);}
+	to_chars_result to_chars(char*beg,char*end,unsigned char      val,int base){return ::to_chars(beg,end,+val,base);}
+	to_chars_result to_chars(char*beg,char*end,  signed short     val,int base){return ::to_chars(beg,end,+val,base);}
+	to_chars_result to_chars(char*beg,char*end,unsigned short     val,int base){return ::to_chars(beg,end,+val,base);}
 	to_chars_result to_chars(char*beg,char*end,  signed int       val,int base){return ::to_chars(beg,end,val,base);}
 	to_chars_result to_chars(char*beg,char*end,unsigned int       val,int base){return ::to_chars(beg,end,val,base);}
 	to_chars_result to_chars(char*beg,char*end,  signed long      val,int base){return ::to_chars(beg,end,val,base);}
@@ -140,17 +178,17 @@ namespace backports{
 	to_chars_result to_chars(char*beg,char*end,  signed long long val,int base){return ::to_chars(beg,end,val,base);}
 	to_chars_result to_chars(char*beg,char*end,unsigned long long val,int base){return ::to_chars(beg,end,val,base);}
 
-	to_chars_result to_chars(char*beg,char*end,         char      val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,  signed char      val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,unsigned char      val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,  signed short     val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,unsigned short     val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,  signed int       val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,unsigned int       val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,  signed long      val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,unsigned long      val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,  signed long long val){return ::to_chars_small<10>(beg,end,val);}
-	to_chars_result to_chars(char*beg,char*end,unsigned long long val){return ::to_chars_small<10>(beg,end,val);}
+	to_chars_result to_chars(char*beg,char*end,         char      val){return ::to_chars_10(beg,end,+val);}
+	to_chars_result to_chars(char*beg,char*end,  signed char      val){return ::to_chars_10(beg,end,+val);}
+	to_chars_result to_chars(char*beg,char*end,unsigned char      val){return ::to_chars_10(beg,end,+val);}
+	to_chars_result to_chars(char*beg,char*end,  signed short     val){return ::to_chars_10(beg,end,+val);}
+	to_chars_result to_chars(char*beg,char*end,unsigned short     val){return ::to_chars_10(beg,end,+val);}
+	to_chars_result to_chars(char*beg,char*end,  signed int       val){return ::to_chars_10(beg,end,val);}
+	to_chars_result to_chars(char*beg,char*end,unsigned int       val){return ::to_chars_10(beg,end,val);}
+	to_chars_result to_chars(char*beg,char*end,  signed long      val){return ::to_chars_10(beg,end,val);}
+	to_chars_result to_chars(char*beg,char*end,unsigned long      val){return ::to_chars_10(beg,end,val);}
+	to_chars_result to_chars(char*beg,char*end,  signed long long val){return ::to_chars_10(beg,end,val);}
+	to_chars_result to_chars(char*beg,char*end,unsigned long long val){return ::to_chars_10(beg,end,val);}
 }
 // This subroutine returns true if the shortest scientific form fd is a
 // positive power of 10, and the floating-point number that has this shortest
@@ -169,25 +207,25 @@ template<class T>static bool is_rounded_up_pow10_p(typename floating_type_traits
 	if (fd.exponent < 0 || fd.mantissa != 1) return false;
 	return(floating_type_traits<T>::pow10_adjustment_tab[fd.exponent/64]&(1ull<<(63-fd.exponent%64)));
 }
-static constexpr size_t operator""_len(const char*, size_t l)noexcept{ return l; }
+static constexpr int operator""_len(const char*, size_t l)noexcept{ return int(l); }
 // This subroutine handles writing nan, inf and 0 in
 // all formatting modes.
 template<class T> static optional<to_chars_result>to_chars_special(char* first, char* last, T value,chars_format fmt, int precision){
 	bool negative = std::signbit(value);
 	switch(std::fpclassify(value)){
 	case FP_INFINITE:
-		if (last-first < ptrdiff_t(negative + "inf"_len))
+		if (last-first < negative + "inf"_len)
 			return {{last, std::errc::value_too_large}};
 		if (negative)*first++ = '-';
 		memcpy(first, "inf", "inf"_len);
-		return {{first + "inf"_len, std::errc{}}};
+		return {{first + "inf"_len, {}}};
 	break;
 	case FP_NAN:
-		if (last-first < ptrdiff_t(negative + "nan"_len))
+		if (last-first < negative + "nan"_len)
 			return {{last, std::errc::value_too_large}};
 		if (negative)*first++ = '-';
 		memcpy(first, "nan", "nan"_len);
-		return {{first + "nan"_len, std::errc{}}};
+		return {{first + "nan"_len, {}}};
 	break;
 	case FP_ZERO:break;
 	default:case FP_SUBNORMAL:case FP_NORMAL:return nullopt;
@@ -195,52 +233,39 @@ template<class T> static optional<to_chars_result>to_chars_special(char* first, 
 	// We're formatting 0.
 	switch (fmt){
 	case chars_format::fixed:{
-		if (last-first < ptrdiff_t(negative + "0"_len + (precision>0?"."_len + precision:0)))
+		if (last-first < negative + "0"_len + (precision>0?"."_len + precision:0))
 			return {{last, std::errc::value_too_large}};
 		if (negative)*first++ = '-';
 		*first++ = '0';
-		if (precision>0){*first++ = '.';memset(first, '0', precision);first += precision;}
-		return {{first, std::errc{}}};
+		if (precision>0){*first++ = '.';memset(first, '0', size_t(precision));first += precision;}
+		return {{first,{}}};
 		}
 
 	case chars_format::scientific:{
-		if (last-first < ptrdiff_t(negative + "0"_len + (precision>0?"."_len + precision:0) + "e+00"_len))
+		if (last-first < negative + "0"_len + (precision>0?"."_len + precision:0) + "e+00"_len)
 			return {{last, std::errc::value_too_large}};
 		if (negative)*first++ = '-';
 		*first++ = '0';
-		if (precision>0){*first++ = '.';memset(first, '0', precision);first += precision;}
+		if (precision>0){*first++ = '.';memset(first, '0', size_t(precision));first += precision;}
 		memcpy(first, "e+00", 4);first += 4;
-		return {{first, std::errc{}}};
+		return {{first,{}}};
 	}
 	case chars_format::hex:{
-		if (last-first < ptrdiff_t(negative + "0"_len + (precision>0?"."_len + precision:0) + "p+0"_len))
+		if (last-first < negative + "0"_len + (precision>0?"."_len + precision:0) + "p+0"_len)
 			return {{last, std::errc::value_too_large}};
 		if (negative)*first++ = '-';
 		*first++ = '0';
-		if (precision>0){*first++ = '.';memset(first, '0', precision);first += precision;}
+		if (precision>0){*first++ = '.';memset(first, '0', size_t(precision));first += precision;}
 		memcpy(first, "p+0", 3);first += 3;
-		return {{first, std::errc{}}};
+		return {{first,{}}};
 	}
 	case chars_format::general:
-		if (last-first < ptrdiff_t(negative+"0"_len)) return {{last, std::errc::value_too_large}};
+		if (last-first < negative+"0"_len) return {{last, std::errc::value_too_large}};
 		if (negative)*first++ = '-';
 		*first++ = '0';
-		return {{first, std::errc{}}};
+		return {{first,{}}};
 	}
 }
-template<class T>static int count_trailing_zero(T value){
-	if(!value){return -1;}
-	size_t c=0;
-	value&=-value;
-	for(size_t i=std::numeric_limits<T>::digits/2;i;i>>=1){if(value&~((~(T)0)/((((T)1)<<i)+1))){c+=i;}}
-	return c;
-};
-template<class T>static int bit_width(T value){
-    int r=0;
-    for(int s=std::numeric_limits<T>::digits/2;s;s>>=1){if(value&((~(T)0)<<(s-1))){value>>=s;r+=s;}}
-    return r;
-}
-
 // This subroutine of the floating-point to_chars overloads performs
 // hexadecimal formatting.
 template<class T>static to_chars_result to_chars_hex(char* first, char* last, T value,int precision){
@@ -249,7 +274,6 @@ template<class T>static to_chars_result to_chars_hex(char* first, char* last, T 
 	if (auto result = to_chars_special(first, last, value,chars_format::hex,precision))return *result;
 	// Extract the sign, mantissa and exponent from the value.
 	ieee_t<T> repr=get_ieee_repr(value);
-	// repr.mantissa>>mantissa_bits == 1
 	// Compute the shortest precision needed to print this value exactly,
 	// disregarding trailing zeros.
 	int shortest_full_precision = (mantissa_bits-count_trailing_zero(repr.mantissa) + 3) / 4;
@@ -270,35 +294,35 @@ template<class T>static to_chars_result to_chars_hex(char* first, char* last, T 
 	}
 	// Now before we start writing the string, determine the total length of
 	// the output string and perform a single bounds check.
-	int abs_exponent = abs(repr.exponent);
-	if (last-first < ptrdiff_t(repr.negative + "d"_len + (precision>0?"."_len:0) + precision + (
+	int abs_exponent = abs(repr.exponent-1);
+	if (last-first < repr.negative + "d"_len + (precision>0?"."_len:0) + precision + (
 		abs_exponent >= 10000 ? "p+ddddd"_len :
 		abs_exponent >= 1000 ? "p+dddd"_len :
 		abs_exponent >= 100 ? "p+ddd"_len :
 		abs_exponent >= 10 ? "p+dd"_len : "p+d"_len
-	))) return {last, std::errc::value_too_large};
+	)) return {last, std::errc::value_too_large};
 	// Write the negative sign and the leading hexit.
 	if (repr.negative)*first++ = '-';
-	*first++ = '0' + int(repr.mantissa>>mantissa_bits);
+	*first++ = '0' + char(repr.mantissa>>mantissa_bits);
 	if (precision > 0){
 		*first++ = '.';
 		// Write the rest of the mantissa
-		size_t digits=0;
+		int hexits=0;
 		while (repr.mantissa&((mantissa_t{1}<<mantissa_bits)-1)){
 			repr.mantissa<<=4;
-			first[digits++] = "0123456789abcdef"[0xf&int(repr.mantissa>>mantissa_bits)];
+			first[hexits++] = "0123456789abcdef"[0xf&int(repr.mantissa>>mantissa_bits)];
 		}
-		memset(first+digits, '0', precision-digits);
+		memset(first+hexits, '0', size_t(precision-hexits));
 		first+=precision;
 	}
 	// Finally, write the exponent.
 	*first++ = 'p';
-	if (repr.exponent >= 0)*first++ = '+';
-	return to_chars_small<10>(first, last, repr.exponent);
+	if (repr.exponent-1 >= 0)*first++ = '+';
+	return to_chars_10(first, last, repr.exponent-1);
 }
-template<class... Args> static int snprintf_tonearest(char* buffer,size_t maxlen,const char* format, Args... args){
+template<class... Args> static int snprintf_tonearest(char* buffer,int maxlen,const char* format, Args... args){
 	int mode=fegetround();fesetround(FE_TONEAREST);
-	int len = snprintf(buffer,maxlen+1,format, args...);
+	int len = snprintf(buffer,size_t(maxlen+1),format, args...);
 	fesetround(mode);
 	return len;
 }
@@ -417,13 +441,12 @@ template<class T>static to_chars_result to_chars_short(char* first, char* last, 
 		// Calculate the total length of the output string, perform a bounds
 		// check, and then defer to Ryu's to_chars subroutine.
 		int abs_exponent = abs(fd.exponent + mantissa_length - 1);
-		if (last-first < ptrdiff_t(fd.sign + mantissa_length+ (mantissa_length > 1?"."_len:0) + (
+		if (last-first < fd.sign + mantissa_length+ (mantissa_length > 1?"."_len:0) + (
 			abs_exponent >= 1000 ? "e+dddd"_len :
 			abs_exponent >= 100 ? "e+ddd"_len : "e+dd"_len
-		)))return {last, std::errc::value_too_large};
-		return {first + ryu::to_chars(fd, first), std::errc{}};
-	}
-	else if (fmt == chars_format::fixed && fd.exponent >= 0){
+		))return {last, std::errc::value_too_large};
+		return {first + ryu::to_chars(fd, first),{}};
+	}else if (fmt == chars_format::fixed && fd.exponent >= 0){
 		// The Ryu exponent is positive, and so this number's shortest
 		// representation is a whole number, to be formatted in fixed instead
 		// of scientific notation "as if by std::printf". This means we may
@@ -464,8 +487,8 @@ template<class T>static to_chars_result to_chars_short(char* first, char* last, 
 			// Print the small exactly-representable number in fixed form by
 			// writing out fd.mantissa followed by fd.exponent many 0s.
 			if (fd.sign)*first++ = '-';
-			to_chars_result result = to_chars_small<10>(first, last, fd.mantissa);
-			memset(result.ptr, '0', fd.exponent);
+			to_chars_result result = to_chars_10(first, last, fd.mantissa);
+			memset(result.ptr, '0', size_t(fd.exponent));
 			result.ptr += fd.exponent;
 			return result;
 		}else if (is_same_v<T, long double>){
@@ -476,14 +499,17 @@ template<class T>static to_chars_result to_chars_short(char* first, char* last, 
 			// can avoid this if we use sprintf to write all but the last
 			// digit, and carefully compute and write the last digit
 			// ourselves.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-extension"
 			char buffer[expected_output_length + 1];
-			int output_length = snprintf_tonearest(buffer,expected_output_length,"%.0Lf", value);
-			memcpy(first, buffer, output_length);
-			return {first + output_length, std::errc{}};
+#pragma clang diagnostic pop
+			int output_length = snprintf_tonearest(buffer,expected_output_length,"%.0Lf", double(value));
+			memcpy(first, buffer, size_t(output_length));
+			return {first + output_length,{}};
 		}else{
 			// Otherwise, the number is too big, so defer to d2fixed_buffered_n.
-			int output_length = ryu::d2fixed_buffered_n(value, 0, first);
-			return {first + output_length, std::errc{}};
+			int output_length = ryu::d2fixed_buffered_n(double(value), 0, first);
+			return {first + output_length,{}};
 		}
 	}else if (fmt == chars_format::fixed && fd.exponent < 0){
 		// The Ryu exponent is negative, so fd.mantissa definitely contains
@@ -492,7 +518,7 @@ template<class T>static to_chars_result to_chars_short(char* first, char* last, 
 		// number in fixed notation "as if by std::printf" (with precision
 		// equal to -fd.exponent).
 		int whole_digits = std::max<int>(mantissa_length + fd.exponent, 1);
-		if (last-first < ptrdiff_t(fd.sign + whole_digits + "."_len - fd.exponent))return {last, std::errc::value_too_large};
+		if (last-first < fd.sign + whole_digits + "."_len - fd.exponent)return {last, std::errc::value_too_large};
 		if (mantissa_length <= -fd.exponent){
 			// The magnitude of the number is less than one.  Format the
 			// number appropriately.
@@ -500,15 +526,15 @@ template<class T>static to_chars_result to_chars_short(char* first, char* last, 
 			*first++ = '0';
 			*first++ = '.';
 			int leading_zeros = -fd.exponent - mantissa_length;
-			memset(first, '0', leading_zeros);
+			memset(first, '0', size_t(leading_zeros));
 			first += leading_zeros;
-			return to_chars_small<10>(first, last, fd.mantissa);
+			return to_chars_10(first, last, fd.mantissa);
 		}else{
 			// The magnitude of the number is at least one.
 			if (fd.sign)*first++ = '-';
-			to_chars_result result = to_chars_small<10>(first, last, fd.mantissa);
+			to_chars_result result = to_chars_10(first, last, fd.mantissa);
 			// Make space for and write the decimal point in the correct spot.
-			memmove(&result.ptr[fd.exponent+1], &result.ptr[fd.exponent],-fd.exponent);
+			memmove(&result.ptr[fd.exponent+1], &result.ptr[fd.exponent],size_t(-fd.exponent));
 			result.ptr[fd.exponent] = '.';
 			return result;
 		}
@@ -518,30 +544,30 @@ template<class T>static to_chars_result to_chars_short(char* first, char* last, 
 template<class T>static to_chars_result to_chars_plain(char* first, char* last, T value){
 	if (auto result = to_chars_special(first, last, value, chars_format::general, 0))return *result;
 	auto fd = ryu::floating_to_fd(value);
-	int mantissa_length = ryu::decimalLength(fd.mantissa);
+	int mantissa_length = int(ryu::decimalLength(fd.mantissa));
 	// The 'plain' formatting mode resolves to 'scientific' if it yields
 	// the shorter string, and resolves to 'fixed' otherwise. The
 	// following lower and upper bounds on the exponent characterize when
 	// to prefer 'fixed' over 'scientific'.
 	int lower_bound = -(mantissa_length + 3);
 	int upper_bound = 5;
-	if (mantissa_length == 1)
+	if (mantissa_length == 1){
 		// The decimal point in scientific notation will be omitted in this
 		// case; tighten the bounds appropriately.
-		++lower_bound, --upper_bound;
+		++lower_bound;--upper_bound;
+	}
 	return to_chars_short(
 		first,last,value,
-		(fd.exponent >= lower_bound && fd.exponent <= upper_bound)?chars_format::fixed:chars_format::scientific,
+		(lower_bound <= fd.exponent  && fd.exponent <= upper_bound)?chars_format::fixed:chars_format::scientific,
 		fd,mantissa_length
 	);
 
 };
-
 template<class T>static to_chars_result to_chars_fmt(char* first, char* last, T value,chars_format fmt){
 	if (fmt == chars_format::hex){return to_chars_hex(first, last, value, -1);}
 	if (auto result = to_chars_special(first, last, value, fmt, 0))return *result;
 	auto fd = ryu::floating_to_fd(value);
-	int mantissa_length = ryu::decimalLength(fd.mantissa);
+	int mantissa_length = int(ryu::decimalLength(fd.mantissa));
 	if (fmt == chars_format::general){
 		// Resolve the 'general' formatting mode as per the specification of
 		// the 'g' printf output specifier. Since there is no precision
@@ -606,26 +632,29 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		// Since the output of printf is locale-sensitive, we need to be able
 		// to handle a radix point that's different from '.'.
 		char radix_buf[10];
-		string_view radix = effective_precision?string_view(radix_buf+1,snprintf(radix_buf,10,"%.1f", 0.0)-2):"."_sv;
+		string_view radix = effective_precision?string_view(radix_buf+1,size_t(snprintf(radix_buf,10,"%.1f", 0.0)-2)):"."_sv;
 		// Compute straightforward upper bounds on the output length.
 		int output_length_upper_bound;
 		if (fmt == chars_format::fixed){
 			if (repr.exponent >= 0) output_length_upper_bound = repr.negative + upper_log10_value;
-			else output_length_upper_bound = repr.negative + "0"_len + radix.length() + effective_precision;
-		}else{output_length_upper_bound = ("-d"_len+radix.length()+effective_precision+"e+dddd"_len);}
+			else output_length_upper_bound = repr.negative + "0"_len + int(radix.length()) + effective_precision;
+		}else{output_length_upper_bound = "-d"_len+int(radix.length())+effective_precision+"e+dddd"_len;}
 		// Do the sprintf into the local buffer.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-extension"
 		char buffer[output_length_upper_bound + 1];
-		int output_length = snprintf_tonearest(buffer,output_length_upper_bound, output_specifier,effective_precision,value);
+#pragma clang diagnostic pop
+		int output_length = snprintf_tonearest(buffer,output_length_upper_bound, output_specifier,effective_precision,double(value));
 		if (effective_precision > 0){
 			// We need to replace a radix that is different from '.' with '.'.
 			if (radix != "."){
-				size_t radix_index = string_view{buffer, (size_t)output_length}.find(radix);
+				size_t radix_index = string_view(buffer, size_t(output_length)).find(radix);
 				if (radix_index != string_view::npos){
 					buffer[radix_index] = '.';
 					if (radix.length() > 1){
 						memmove(&buffer[radix_index + 1],
 							&buffer[radix_index + radix.length()],
-							output_length - radix_index - radix.length());
+							size_t(output_length) - radix_index - radix.length());
 						output_length -= radix.length() - 1;
 					}
 				}
@@ -634,7 +663,7 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		// Copy the string from the buffer over to the output range.
 		if (last-first < output_length+excess_precision)
 			return {last, std::errc::value_too_large};
-		memcpy(first, buffer, output_length);
+		memcpy(first, buffer, size_t(output_length));
 		first += output_length;
 
 		// Add the excess 0s to the result.
@@ -645,15 +674,15 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 					: first[-5] == 'e' ? &first[-5]
 					: &first[-4]);
 				memmove(significand_end + excess_precision, significand_end,
-					first - significand_end);
-				memset(significand_end, '0', excess_precision);
+					size_t(first - significand_end));
+				memset(significand_end, '0', size_t(excess_precision));
 				first += excess_precision;
 			}else if (fmt == chars_format::fixed){
-				memset(first, '0', excess_precision);
+				memset(first, '0', size_t(excess_precision));
 				first += excess_precision;
 			}
 		}
-		return {first, std::errc{}};
+		return {first,{}};
 	}else if (fmt == chars_format::scientific){
 		int effective_precision= std::min(precision, max_eff_scientific_precision);
 		int excess_precision = precision - effective_precision;
@@ -671,18 +700,19 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		if (last-first >= output_length_upper_bound + excess_precision){
 			// The result will definitely fit into the output range, so we can
 			// write directly into it.
-			output_length = ryu::d2exp_buffered_n(value, effective_precision,
-								first, nullptr);
+			output_length = ryu::d2exp_buffered_n(double(value), uint32_t(effective_precision),first, nullptr);
 		}else if (abs(abs(repr.exponent) - 332) <= 4){
 			// Write the result of d2exp_buffered_n into an intermediate
 			// buffer, do a bounds check, and copy the result into the output
 			// range.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-extension"
 			char buffer[output_length_upper_bound];
-			output_length = ryu::d2exp_buffered_n(value, effective_precision,
-								buffer, nullptr);
+#pragma clang diagnostic pop
+			output_length = ryu::d2exp_buffered_n(double(value), uint32_t(effective_precision),buffer, nullptr);
 			if (last-first < output_length+excess_precision)
 				return {last, std::errc::value_too_large};
-			memcpy(first, buffer, output_length);
+			memcpy(first, buffer, size_t(output_length));
 		}else
 			// If the scientific exponent is not near 100, then the upper bound
 			// is actually the exact length, and so the result will definitely
@@ -692,11 +722,11 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		if (excess_precision > 0){
 			// Splice the excess zeros into the result.
 			char* significand_end = (first[-5] == 'e'? &first[-5] : &first[-4]);
-			memmove(significand_end + excess_precision, significand_end,first - significand_end);
-			memset(significand_end, '0', excess_precision);
+			memmove(significand_end + excess_precision, significand_end,size_t(first - significand_end));
+			memset(significand_end, '0', size_t(excess_precision));
 			first += excess_precision;
 		}
-		return {first, std::errc{}};
+		return {first,{}};
 	}else if (fmt == chars_format::fixed){
 		int effective_precision = std::min(precision, max_eff_fixed_precision);
 		int excess_precision = precision - effective_precision;
@@ -711,24 +741,27 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		if (last-first >= output_length_upper_bound + excess_precision){
 			// The result will definitely fit into the output range, so we can
 			// write directly into it.
-			output_length = ryu::d2fixed_buffered_n(value, effective_precision,first);
+			output_length = ryu::d2fixed_buffered_n(double(value), uint32_t(effective_precision),first);
 		}else{
 			// Write the result of d2fixed_buffered_n into an intermediate
 			// buffer, do a bounds check, and copy the result into the output
 			// range.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-extension"
 			char buffer[output_length_upper_bound];
-			output_length = ryu::d2fixed_buffered_n(value, effective_precision,buffer);
+#pragma clang diagnostic pop
+			output_length = ryu::d2fixed_buffered_n(double(value), uint32_t(effective_precision),buffer);
 			if (last-first < output_length+excess_precision )
 				return {last, std::errc::value_too_large};
-			memcpy(first, buffer, output_length);
+			memcpy(first, buffer, size_t(output_length));
 		}
 		first += output_length;
 		if (excess_precision > 0){
 			// Append the excess zeros into the result.
-			memset(first, '0', excess_precision);
+			memset(first, '0', size_t(excess_precision));
 			first += excess_precision;
 		}
-		return {first, std::errc{}};
+		return {first,{}};
 	}else if (fmt == chars_format::general){
 		// Handle the 'general' formatting mode as per C11 printf's %g output
 		// specifier. Since Ryu doesn't do zero-trimming, we always write to
@@ -739,8 +772,10 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		// The four bytes of headroom is to avoid needing to do a memmove when
 		// rewriting a scientific form such as 1.00e-2 into the equivalent
 		// fixed form 0.001.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-extension"
 		char buffer[4 + output_length_upper_bound];
-
+#pragma clang diagnostic pop
 		// 7.21.6.1/8: "Let P equal ... 1 if the precision is zero."
 		if (effective_precision == 0)effective_precision = 1;
 
@@ -748,7 +783,7 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 		// scientific exponent.
 		int scientific_exponent;
 		char* buffer_start = buffer + 4;
-		int output_length = ryu::d2exp_buffered_n(value, effective_precision - 1,buffer_start, &scientific_exponent);
+		int output_length = ryu::d2exp_buffered_n(double(value),uint32_t(effective_precision - 1),buffer_start, &scientific_exponent);
 		// 7.21.6.1/8: "Then, if a conversion with style E would have an
 		// exponent of X:
 		//   if P > X >= -4, the conversion is with style f and
@@ -774,7 +809,7 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 				if (repr.negative)*head++ = '-';
 				*head++ = '0';
 				*head++ = '.';
-				memset(head, '0', -scientific_exponent - 1);
+				memset(head, '0', size_t(-scientific_exponent - 1));
 				// buffer_start == "-0.00011234e-04"
 
 				// Now drop the exponent suffix, and add the leading zeros to
@@ -795,8 +830,7 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 				// non-empty fractional part and a nonnegative exponent,
 				// e.g. buffer_start == "1.234e+02".
 				char* decimal_point = &buffer_start[repr.negative + 1];
-				memmove(decimal_point, decimal_point+1,
-					scientific_exponent);
+				memmove(decimal_point, decimal_point+1,size_t(scientific_exponent));
 				// buffer_start == "123.4e+02"
 				decimal_point[scientific_exponent] = '.';
 				if (scientific_exponent >= 100)
@@ -829,23 +863,21 @@ template<class T>static to_chars_result to_chars_prec(char* first, char* last, T
 							: &buffer_start[output_length-4]);
 			}else if (fmt == chars_format::fixed)
 				fractional_part_end = &buffer_start[output_length];
-			string_view fractional_part
-				= {fractional_part_start, (size_t)(fractional_part_end - fractional_part_start) };
+			string_view fractional_part= string_view(fractional_part_start, size_t(fractional_part_end - fractional_part_start));
 			size_t last_nonzero_digit_pos = fractional_part.find_last_not_of('0');
 
 			char* trim_start;
 			if (last_nonzero_digit_pos == string_view::npos)trim_start = decimal_point;
 			else trim_start = &fractional_part_start[last_nonzero_digit_pos] + 1;
 			if (fmt == chars_format::scientific)
-				memmove(trim_start, fractional_part_end,
-					&buffer_start[output_length] - fractional_part_end);
+				memmove(trim_start, fractional_part_end,size_t(&buffer_start[output_length] - fractional_part_end));
 			output_length -= fractional_part_end - trim_start;
 		}
 		if (last-first < output_length)
 			return {last, std::errc::value_too_large};
 
-		memcpy(first, buffer_start, output_length);
-		return {first + output_length, std::errc{}};
+		memcpy(first, buffer_start, size_t(output_length));
+		return {first + output_length,{}};
 	}
 	__builtin_unreachable();
 }

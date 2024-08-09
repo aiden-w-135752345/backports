@@ -5,7 +5,7 @@ namespace backports{
     namespace _special_members{
         template<class T,bool>struct destruct:T{
             using T::T;
-            ~destruct(){this->T::destruct();};
+            ~destruct(){this->T::destruct();}
         };
         template<class T>struct destruct<T,true>:T{using T::T;};
         template<class T,bool,bool>struct moveAssign:T{
@@ -22,7 +22,7 @@ namespace backports{
             moveAssign(const moveAssign&)            = default;
             moveAssign(moveAssign&&)                 = default;
             moveAssign& operator=(const moveAssign&) = default;
-            moveAssign& operator=(moveAssign&&that)noexcept(noexcept(std::declval<T>().assign(std::move(that)))){this->assign(std::move(that));return *this;};
+            moveAssign& operator=(moveAssign&&that)noexcept(noexcept(std::declval<T>().assign(std::move(that)))){this->assign(std::move(that));return *this;}
         };
         template<class T>struct moveAssign<T,true,true>:T{using T::T;};
         template<class T,bool,bool>struct copyAssign:T{
@@ -38,7 +38,7 @@ namespace backports{
             copyAssign()                             = default;
             copyAssign(const copyAssign&)            = default;
             copyAssign(copyAssign&&)                 = default;
-            copyAssign& operator=(const copyAssign&that)noexcept(noexcept(std::declval<T>().assign(that))){this->assign(that);return *this;};
+            copyAssign& operator=(const copyAssign&that)noexcept(noexcept(std::declval<T>().assign(that))){this->assign(that);return *this;}
             copyAssign& operator=(copyAssign&&)      = default;
         };
         template<class T>struct copyAssign<T,true,true>:T{using T::T;};

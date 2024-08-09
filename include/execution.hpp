@@ -1,7 +1,7 @@
 #ifndef EXECUTION_HPP
 #define EXECUTION_HPP
 #include <execution>
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 #include "type_traits.hpp"
 namespace backports{
     namespace execution {

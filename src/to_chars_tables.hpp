@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "ryu/ryu_generic_128.hpp"
 #include "ryu/common.hpp"
+__extension__ using int128_t = __int128;
 __extension__ using uint128_t = unsigned __int128;
 // Determine the binary format of 'long double'.
 

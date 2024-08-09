@@ -1,7 +1,7 @@
 #ifndef OPTIONAL_HPP
 #define OPTIONAL_HPP 1
-#include "../src/inline_variables.hpp"
-#include "../src/special_members.hpp"
+#include "detail/inline_variables.hpp"
+#include "detail/special_members.hpp"
 #include "utility.hpp"
 #include "type_traits.hpp"
 #include <stdexcept>
@@ -12,8 +12,7 @@ namespace backports{
     struct nullopt_t{};
     constexpr INLINE const nullopt_t nullopt;
     struct bad_optional_access : public std::exception{
-        bad_optional_access() {}
-        const char* what() const noexcept override{return "bad optional access";}
+        const char* what() const noexcept override;//{return "bad optional access";}
     };
     namespace _opt{
         template <class T>struct Base{
@@ -22,21 +21,21 @@ namespace backports{
             alignas(T) unsigned char payload[sizeof(T)];
             constexpr Base()=default;
             void construct(const Base&that)noexcept(is_nothrow_copy_constructible_v<Payload>){
-                if(that.filled){::new (this->payload)Payload(*(T*)that.payload); this->filled = true; }
+                if(that.filled){::new (this->payload)Payload(*reinterpret_cast<T*>(that.payload)); this->filled = true; }
             }
             void construct(const Base&&that)noexcept(is_nothrow_move_constructible_v<Payload>){
-                if(that.filled){::new (this->payload)Payload(std::move(*(T*)that.payload)); this->filled = true; }
+                if(that.filled){::new (this->payload)Payload(std::move(*reinterpret_cast<T*>(that.payload))); this->filled = true; }
             }
             void assign(const Base&that)noexcept(is_nothrow_copy_constructible_v<Payload>&&is_nothrow_copy_assignable_v<Payload>){
-                if (this->filled && that.filled) *(T*)(this->payload) = *(T*)that.payload;
+                if (this->filled && that.filled) *reinterpret_cast<T*>(this->payload) = *reinterpret_cast<T*>(that.payload);
                 else {this->reset();this->construct(that); }
             }
             void assign(Base&&that)noexcept(is_nothrow_move_constructible_v<Payload>&&is_nothrow_move_assignable_v<Payload>){
-                if (this->filled && that.filled) *(T*)(this->payload) = std::move(*(T*)that.payload);
+                if (this->filled && that.filled) *reinterpret_cast<T*>(this->payload) = std::move(*reinterpret_cast<T*>(that.payload));
                 else {this->reset();this->construct(std::move(that)); }
             }
             void destruct(){reset();}
-            void reset(){if(filled){((T*)payload)->~Payload();filled=false;}}
+            void reset(){if(filled){reinterpret_cast<T*>(payload)->~Payload();filled=false;}}
         };
         template <class T>using Base_t=detail::special_members<
             Base<T>,
@@ -78,9 +77,8 @@ namespace backports{
         template<class... Args>T&emplace_impl(Args&&... args){
             reset();
             using Payload = std::remove_const_t<T>;
-            ::new (payload)Payload(std::forward<Args>(args)...);
-            filled = true;
-            return *(T*)payload;
+            ::new (payload)Payload(std::forward<Args>(args)...);filled = true;
+            return **this;
         }
     public:
         using value_type = T;
@@ -96,16 +94,16 @@ namespace backports{
             explicit constexpr optional(U&& u){emplace(std::forward<U>(u));}
         template <class U,
             std::enable_if_t<T_constructible<const U&>&&not_convertible_from_optional<U>&&convertible_T<const U&>, bool> = true>
-            constexpr optional(const optional<U>&that){if(that.filled)emplace(*(U*)that.payload);}
+            constexpr optional(const optional<U>&that){if(that.filled)emplace(*that);}
         template <class U,
             std::enable_if_t<T_constructible<const U&>&&not_convertible_from_optional<U>&&!convertible_T<const U&>, bool> = false>
-            explicit constexpr optional(const optional<U>&that){if(that.filled)emplace(*(U*)that.payload);}
+            explicit constexpr optional(const optional<U>&that){if(that.filled)emplace(*that);}
         template <class U,
             std::enable_if_t<T_constructible<U&&>&&not_convertible_from_optional<U>&&convertible_T<U&&>, bool> = true>
-            constexpr optional(optional<U>&&that){if(that.filled)emplace(std::move(*(U*)that.payload));}
+            constexpr optional(optional<U>&&that){if(that.filled)emplace(std::move(*that));}
         template <class U,
             std::enable_if_t<T_constructible<U&&>&&not_convertible_from_optional<U>&&!convertible_T<U&&>, bool> = false>
-            explicit constexpr optional(optional<U>&& that){if(that.filled)emplace(std::move(*(U*)that.payload));}
+            explicit constexpr optional(optional<U>&& that){if(that.filled)emplace(std::move(*that));}
         
         template<class... Args,std::enable_if_t<T_constructible<Args&&...>, bool> = false>
             explicit constexpr optional(in_place_t, Args&&...args){emplace(std::forward<Args>(args)...);}
@@ -117,14 +115,14 @@ namespace backports{
             not_optional_T<U>&&T_constructible<U>&&is_assignable_v<T&, U>&&
             !(is_scalar_v<T>&&is_same_v<T, std::decay_t<U>>),
         optional&>operator=(U&& u){
-            if (filled){*(T*)payload = std::forward<U>(u);}else{emplace(std::forward<U>(u));}
+            if (filled){**this = std::forward<U>(u);}else{emplace(std::forward<U>(u));}
             return *this;
         }
         template<class U>std::enable_if_t<T_constructible<const U&>&&not_assignable_from_optional<U>,optional&>
             operator=(const optional<U>& that){
                 if (that.filled){
-                    if (this->filled)*(T*)(this->payload) = *(U*)that.payload;
-                    else this->construct(*(U*)that.payload);
+                    if (this->filled)**this = *that;
+                    else this->construct(*that);
                 }
                 else this->reset();
                 return *this;
@@ -133,8 +131,8 @@ namespace backports{
         template<class U>std::enable_if_t<T_constructible<U&&>&&not_assignable_from_optional<U>,optional&>
             operator=(optional<U>&& that){
                 if (that.filled){
-                    if (this->filled)*(T*)(this->payload) = std::move(*(U*)that.payload);
-                    else this->emplace(std::move(*(U*)that.payload));
+                    if (this->filled)**this = std::move(*that);
+                    else this->emplace(std::move(*that));
                 } else this->reset();
                 return *this;
             }
@@ -147,37 +145,37 @@ namespace backports{
         // Swap.
         void swap(optional& that) noexcept(is_nothrow_move_constructible_v<T> && is_nothrow_swappable_v<T>){
             using std::swap;
-            if (this->filled && that.filled) swap(*(T*)(this->payload),*(T*)that.payload);
+            if (this->filled && that.filled) swap(**this,*that);
             else if (this->filled){
-                that.emplace(std::move(*(T*)(this->payload)));
+                that.emplace(std::move(**this));
                 this->reset();
             }
             else if (that.filled){
-                this->emplace(std::move(*(T*)that.payload));
+                this->emplace(std::move(*that));
                 that.reset();
             }
         }
         
         // Observers.
-        constexpr const T*operator->() const{ return (T*)payload; }
-        T*operator->(){ return (T*)payload; }
-        constexpr const T&operator*() const&{ return *(T*)payload; }
-        constexpr T&operator*()&{ return *(T*)payload; }
-        constexpr T&&operator*()&&{ return std::move(*(T*)payload); }
-        constexpr const T&&operator*() const&&{ return std::move(*(T*)payload); }
+        constexpr const T*operator->() const{ return reinterpret_cast<T*>(payload); }
+        T*operator->(){ return reinterpret_cast<T*>(payload); }
+        constexpr const T&operator*() const&{ return *reinterpret_cast<T*>(payload); }
+        constexpr T&operator*()&{ return *reinterpret_cast<T*>(payload); }
+        constexpr T&&operator*()&&{ return std::move(*reinterpret_cast<T*>(payload)); }
+        constexpr const T&&operator*() const&&{ return std::move(*reinterpret_cast<T*>(payload)); }
         constexpr bool has_value() const noexcept { return filled; }
         constexpr explicit operator bool() const noexcept{ return filled; }
-        constexpr const T&value() const& {assert_filled();return *(T*)payload;}
-        constexpr T&value()&{assert_filled();return *(T*)payload;}
-        constexpr T&&value()&&{assert_filled();return std::move(*(T*)payload);}
-        constexpr const T&&value() const&&{assert_filled();return std::move(*(T*)payload);}
+        constexpr const T&value() const& {assert_filled();return **this;}
+        constexpr T&value()&{assert_filled();return **this;}
+        constexpr T&&value()&&{assert_filled();return std::move(**this);}
+        constexpr const T&&value() const&&{assert_filled();return std::move(**this);}
         template<class Def>constexpr T value_or(Def&& def) const&{
             static_assert(is_copy_constructible_v<T>&&convertible_T<Def&&>,"Cannot return value");
-            return filled? *(T*)payload: static_cast<T>(std::forward<Def>(def));
+            return filled? **this: static_cast<T>(std::forward<Def>(def));
         }
         template<class Def>T value_or(Def&& def) && {
             static_assert(is_move_constructible_v<T>&&convertible_T<Def&&>,"Cannot return value" );
-            return filled? std::move(*(T*)payload): static_cast<T>(std::forward<Def>(def));
+            return filled? std::move(**this): static_cast<T>(std::forward<Def>(def));
         }
         using Base::reset;
     };// class optional
@@ -270,6 +268,5 @@ namespace backports{
         };
     }
 } // namespace backports
-
 template<class T>struct std::hash<backports::optional<T>>:public backports::_opt::hash<std::remove_const_t<T>>{};
 #endif // OPTIONAL_HPP

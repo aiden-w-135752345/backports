@@ -4,8 +4,6 @@
 #include <cmath>
 #include "type_traits.hpp"
 #include <stdexcept>
-
-//#include <bits/specfun.h>
 namespace backports{
     namespace _cmath{
         template<class T, bool = is_integral_v<T>>struct promote{ typedef double type;};

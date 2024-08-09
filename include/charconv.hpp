@@ -6,12 +6,12 @@
 namespace backports{
     enum class chars_format{ scientific = 1, fixed = 2, hex = 4, general = fixed | scientific };
     constexpr chars_format operator|(chars_format l, chars_format r)
-    noexcept{ return (chars_format)((unsigned)l | (unsigned)r); }
+    noexcept{ return chars_format(unsigned(l) | unsigned(r)); }
     constexpr chars_format operator&(chars_format l, chars_format r)
-    noexcept{ return (chars_format)((unsigned)l & (unsigned)r); }
+    noexcept{ return chars_format(unsigned(l) & unsigned(r)); }
     constexpr chars_format operator^(chars_format l, chars_format r)
-    noexcept{ return (chars_format)((unsigned)l ^ (unsigned)r); }
-    constexpr chars_format operator~(chars_format x) noexcept{ return (chars_format)~(unsigned)x; }
+    noexcept{ return chars_format(unsigned(l) ^ unsigned(r)); }
+    constexpr chars_format operator~(chars_format x) noexcept{ return chars_format(~unsigned(x)); }
     constexpr chars_format& operator|=(chars_format& l, chars_format r)noexcept{ return l = l | r; }
     constexpr chars_format& operator&=(chars_format& l, chars_format r)noexcept{ return l = l & r; }
     constexpr chars_format& operator^=(chars_format& l, chars_format r)noexcept{ return l = l ^ r; }

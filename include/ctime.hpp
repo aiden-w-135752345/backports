@@ -1,7 +1,7 @@
 #ifndef CTIME_HPP
 #define CTIME_HPP
 #include <ctime>
-#include "../src/inline_variables.hpp"
+#include "detail/inline_variables.hpp"
 #include <time.h>
 namespace backports{
     using ::timespec;
